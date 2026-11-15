@@ -194,3 +194,15 @@ PostgresSaver checkpoint，单台阿里云 ECS Docker Compose 部署。已否决
 第 4 步（已完成）：SQLModel 业务表（users/conversations/runs/run_events/reports）与 checkpoint 同库，JWT 账号与归属校验，
 报告库与 md/html 下载，重启恢复；前端登录页与服务端列表，见 [持久化与账号规格](persistence-and-accounts.md)。
 后续：ECS Docker Compose 部署（nginx + fastapi + postgres），Postgres 路径实机验证。
+
+
+## 待办（2026-11-15 记录，非阻塞）
+
+- **升级 akshare 并迁移接口名。** 当前钉在 `<1.20.46`（见 requirements.txt 注释），因 1.20.46 起
+  `stock_zh_a_hist → stock_zh_a_hist_em`、`stock_zh_a_daily → stock_zh_a_daily_sina`、
+  `stock_zh_index_daily → stock_zh_index_daily_sina` 等改名。触发条件：某个被钉版本的接口因上游页面变化失效、
+  需要新版本才有的接口（财务报表/机构持仓/研报评级）、或依赖解析冲突。做法：逐接口核对 `src/data/tools.py`
+  用到的 9 个 akshare 函数（含 `_call_sina` 白名单与 `scripts/refresh_security_directory.py`）的新名称与返回列，
+  更新测试 mock，再放开版本上限。
+- ECharts 整包约 1 MB，可按需引入 `echarts/core` 缩小前端包。
+- checkpoint 保留策略与清理任务、PDF 导出、密码重置，见 persistence-and-accounts.md「未做」。

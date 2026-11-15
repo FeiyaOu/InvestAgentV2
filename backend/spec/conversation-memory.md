@@ -19,6 +19,12 @@
 格式与原 Streamlit 摘要一致）；线程为空时才使用调用方传入的 `conversation_context`。
 调用方传入的上下文在后续轮次被视为可能过期，一律忽略。
 
+### Docker 验收补充（2026-11-15）
+
+最近三轮摘要同时经父图、Supervisor 传给 Market Data 子图的 `conversation_context`，
+用于回答“刚才查询哪只股票”等追问。摘要是待分析数据，不是新指令或实时行情证据；
+不跨轮复用 DatasetStore。仅让 Planner 读取摘要时，任务改写遗漏主体会导致专家丢失指代。
+
 ## 澄清中断
 
 仅在传入 checkpointer 时接入 `clarify` 节点。Planner 返回 needs_clarification 且

@@ -1,0 +1,133 @@
+# main → test → build images → push to Aliyun ACR → ssh to ECS → docker compose pull && up -d
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ${{ secrets.ACR_REGISTRY }}          # e.g. registry.cn-hangzhou.aliyuncs.com
+  NAMESPACE: ${{ secrets.ACR_NAMESPACE }}        # your ACR namespace
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+        working-directory: backend
+      - run: python linters/check_agent_structure.py && ruff check src/ tests/ api/ services/ && pytest -q
+        working-directory: backend
+        env:
+          DASHSCOPE_API_KEY: ""
+          USE_REAL_DATA: "false"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund && npm run typecheck && npm test && npm run build
+        working-directory: frontend
+
+  build-push:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: meta
+        run: echo "tag=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      - name: Build and push api
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          build-args: |
+            PIP_INDEX_URL=https://pypi.org/simple
+            APT_MIRROR=
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/investagent-api:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/investagent-api:latest
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,scope=api,mode=max
+      - name: Build and push web
+        uses: docker/build-push-action@v6
+        with:
+          context: frontend
+          push: true
+          build-args: |
+            NPM_REGISTRY=https://registry.npmjs.org/
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/investagent-web:${{ steps.meta.outputs.tag }}
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/investagent-web:latest
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,scope=web,mode=max
+
+  deploy:
+    needs: build-push
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ship compose file
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_SSH_PORT || 22 }}
+          source: deploy/docker-compose.yml
+          target: ${{ secrets.ECS_APP_DIR || '/opt/investagent' }}
+          strip_components: 1
+      - name: Pull and restart
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          TAG: ${{ needs.build-push.outputs.tag }}
+          REGISTRY: ${{ env.REGISTRY }}
+          NAMESPACE: ${{ env.NAMESPACE }}
+          APP_DIR: ${{ secrets.ECS_APP_DIR || '/opt/investagent' }}
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_SSH_PORT || 22 }}
+          envs: TAG,REGISTRY,NAMESPACE,APP_DIR
+          script: |
+            set -e
+            cd "$APP_DIR"
+            echo "${{ secrets.ACR_PASSWORD }}" | docker login "$REGISTRY" -u "${{ secrets.ACR_USERNAME }}" --password-stdin
+            sed -i "s#^API_IMAGE=.*#API_IMAGE=$REGISTRY/$NAMESPACE/investagent-api:$TAG#; s#^WEB_IMAGE=.*#WEB_IMAGE=$REGISTRY/$NAMESPACE/investagent-web:$TAG#" .env
+            docker compose pull
+            docker compose up -d --remove-orphans --wait --wait-timeout 180
+            docker compose ps
+            web_binding=$(docker compose port web 80)
+            web_port=${web_binding##*:}
+            for attempt in $(seq 1 30); do
+              if curl -fsS "http://127.0.0.1:$web_port/api/health"; then
+                docker image prune -f
+                exit 0
+              fi
+              sleep 2
+            done
+            docker compose logs --tail=100 api web
+            exit 1

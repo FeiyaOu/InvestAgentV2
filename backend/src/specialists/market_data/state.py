@@ -34,6 +34,7 @@ class MarketDataResult(MarketDataAnswer):
 
 
 class MarketDataState(TypedDict, total=False):
+    conversation_context: str
     task: str
     subject: str
     time_range: str

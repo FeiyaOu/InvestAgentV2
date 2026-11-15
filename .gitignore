@@ -15,6 +15,7 @@ dist/
 backend/runtime/reports/*.json
 backend/*.db
 backend/*.sqlite
+backend/runtime/*.sqlite*
 
 # node
 node_modules/

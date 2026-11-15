@@ -13,6 +13,7 @@ class ReportParameters(BaseModel):
 
 
 class SupervisorState(TypedDict, total=False):
+    conversation_context: str
     plan: dict | None
     report_parameters: dict[str, dict]
     task_results: dict[str, dict]

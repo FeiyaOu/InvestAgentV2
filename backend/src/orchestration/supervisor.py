@@ -117,6 +117,7 @@ def create_supervisor_graph(*, market_data_graph=None, report_graph=None, analyt
             try:
                 if category == "market_data":
                     raw = market.invoke({"task": task["question"],
+                                         "conversation_context": state.get("conversation_context", ""),
                                          "existing_evidence": _dependency_evidence(task, results)}, config=config)
                     status, result, error = _market_result(raw)
                 elif category == "investment_strategy":

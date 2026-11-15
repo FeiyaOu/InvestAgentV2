@@ -81,6 +81,7 @@ def create_parent_graph(*, market_data_graph=None, report_graph=None, analytics_
             child_config = dict(config)
             child_config["configurable"] = {**config.get("configurable", {}), "dataset_store": DatasetStore(), "analysis_store": AnalysisStore(), "strategy_store": StrategyStore()}
             output = execution.invoke({"plan": state["plan"],
+                                       "conversation_context": state.get("conversation_context", ""),
                                        "report_parameters": state["report_parameters"]}, config=child_config)
             results = validate_task_results(output["task_results"])
             planned = {task["task_id"]: task for task in state["plan"]["tasks"]}

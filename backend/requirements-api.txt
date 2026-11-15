@@ -1,0 +1,51 @@
+# API runtime dependencies
+
+# LangGraph — StateGraph, ToolNode, add_messages reducer
+langgraph>=0.2
+
+# LangChain core + community
+langchain>=0.3
+langchain-core>=0.3
+langchain-community>=0.3
+
+# Qwen LLM via DashScope
+dashscope>=1.20
+
+# Pydantic — stage output validation
+pydantic>=2.0
+
+# AKShare — free A-share market data (no API key required)
+# 钉在 <1.20.46：该版本起 stock_zh_a_hist / stock_zh_a_daily / stock_zh_index_daily 等接口改名
+# （stock_zh_a_hist_em / stock_zh_a_daily_sina / ...），列也可能变化；src/data/tools.py 尚未迁移。
+# 升级前需逐接口核对返回列并更新 tools.py 与测试。
+akshare>=1.20,<1.20.46
+
+# pandas — 显式钉在 2.x：pandas 3 默认使用 pyarrow 字符串后端，
+# akshare 内部 str.replace(r"\u3000", regex=True) 会被 RE2 判为非法转义，
+# 导致 stock_news_em 等接口在真实数据模式下直接抛 ArrowInvalid
+pandas>=2.0,<3.0
+numpy>=1.26
+
+# Environment variable loading
+python-dotenv>=1.0
+
+# ---- Evaluation layer (Phase 9) ----
+# LangFuse — LLM call tracing (optional, needs LANGFUSE_* env vars)
+langfuse>=3.0
+
+# ---- V4: durable conversation state ----
+# Postgres checkpointer for production threads; SQLite for local development/tests
+langgraph-checkpoint-sqlite>=2.0
+langgraph-checkpoint-postgres>=2.0
+# Bundle libpq for python:slim; the plain psycopg package needs system libpq.
+psycopg[binary,pool]>=3.2
+
+# ---- V4: API service layer ----
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sqlmodel>=0.0.22
+PyJWT>=2.8
+argon2-cffi>=23.1
+httpx>=0.27
+email-validator>=2.0
+alembic>=1.13

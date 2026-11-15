@@ -238,3 +238,12 @@ def test_batch_history_references_are_all_collected(monkeypatch):
     assert sorted(store.get(ref["dataset_id"]).symbol for ref in refs) == ["000858", "600519"]
     assert result["result"]["evidence"][0]["status"] == "returned"
     assert result["status"] == "partial"  # Mock data is never reported as complete.
+
+
+def test_initialize_preserves_followup_context_in_model_input():
+    from src.specialists.market_data.nodes import initialize
+
+    context = '用户：查询贵州茅台（600519）的股价\n回答摘要：贵州茅台。'
+    result = initialize({'task': '刚才查的是哪只股票？', 'conversation_context': context})
+    payload = json.loads(result['messages'][1].content)
+    assert payload['conversation_context'] == context

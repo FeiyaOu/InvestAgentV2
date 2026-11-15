@@ -50,11 +50,12 @@ def open_checkpointer(database_url: str):
         saver = SqliteSaver(conn)
         saver.setup()
         return saver, conn.close
+    # Runs execute on a thread pool, so the saver needs a pool, not one shared psycopg connection.
     from langgraph.checkpoint.postgres import PostgresSaver
-    from psycopg import Connection
     from psycopg.rows import dict_row
-    conn = Connection.connect(database_url.replace("postgresql+psycopg://", "postgresql://"), autocommit=True,
-                              prepare_threshold=0, row_factory=dict_row)
-    saver = PostgresSaver(conn)
+    from psycopg_pool import ConnectionPool
+    pool = ConnectionPool(database_url.replace("postgresql+psycopg://", "postgresql://"), min_size=1, max_size=8,
+                          open=True, kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row})
+    saver = PostgresSaver(pool)
     saver.setup()
-    return saver, conn.close
+    return saver, pool.close

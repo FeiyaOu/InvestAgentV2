@@ -169,3 +169,10 @@ def test_market_failure_preserves_safe_error_code():
         "error": {"type": "invalid_output", "message": "输出格式或证据引用验证失败。"}})
     result = graph.invoke({"plan": plan(task("a"))})
     assert result["task_results"]["a"]["error"]["type"] == "invalid_output"
+
+
+def test_market_followup_receives_conversation_context():
+    graph, md, _ = build()
+    context = '用户：查询贵州茅台（600519）的股价\n回答摘要：贵州茅台。'
+    graph.invoke({'plan': plan(task('followup')), 'conversation_context': context})
+    assert md.invoke.call_args.args[0]['conversation_context'] == context

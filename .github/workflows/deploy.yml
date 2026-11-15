@@ -61,6 +61,9 @@ jobs:
         with:
           context: backend
           push: true
+          # This ACR instance rejects OCI attestation manifests.
+          provenance: false
+          sbom: false
           build-args: |
             PIP_INDEX_URL=https://pypi.org/simple
             APT_MIRROR=
@@ -74,6 +77,9 @@ jobs:
         with:
           context: frontend
           push: true
+          # Keep the web image compatible with the same ACR instance.
+          provenance: false
+          sbom: false
           build-args: |
             NPM_REGISTRY=https://registry.npmjs.org/
           tags: |

@@ -3,7 +3,7 @@
 PYTHON ?= .venv/bin/python
 STREAMLIT ?= $(PYTHON) -m streamlit
 
-.PHONY: install install-dev test test-reporter test-agent test-integration lint run
+.PHONY: install install-dev test test-reporter test-agent test-integration lint run api
 
 install:
 	$(PYTHON) -m pip install -r requirements.txt
@@ -25,8 +25,11 @@ test-integration:
 	$(PYTHON) -m pytest tests/ -m integration -v
 
 lint:
-	$(PYTHON) -m ruff check src/ tests/
+	$(PYTHON) -m ruff check src/ tests/ api/
 	$(PYTHON) linters/check_agent_structure.py
 
 run:
 	$(STREAMLIT) run app/streamlit_app.py
+
+api:
+	$(PYTHON) -m uvicorn api.main:app --reload --port 8000

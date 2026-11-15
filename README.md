@@ -15,6 +15,10 @@ make backend-install     # backend/.venv 与依赖
 make backend-test        # 全部单元测试
 make backend-lint        # ruff + 结构 lint
 make backend-run         # Streamlit 调试面板
+make backend-api         # FastAPI http://127.0.0.1:8000
+make frontend-dev        # React 工作台 http://localhost:5173
 ```
+
+前端结构与约定见 `frontend/README.md`。
 
 架构决策见 `backend/spec/project-architecture.md`；V4 多轮会话与 checkpointer 设计见 `backend/spec/conversation-memory.md`。

@@ -190,4 +190,5 @@ TaskError 移至 core/errors.py，使 specialists 不反向依赖 orchestration�
 PostgresSaver checkpoint，单台阿里云 ECS Docker Compose 部署。已否决 LangGraph Server 与 Vercel+FC+Neon。
 第 1 步（已完成）：父图跨轮 `turns` 与 interrupt 澄清，见 [多轮会话规格](conversation-memory.md)。
 第 2 步（已完成）：FastAPI runs/SSE/resume 与事件归并器，见 [服务层规格](api-service.md)；真实模型 + mock 数据端到端已通过。
-后续：React 数据驱动改造 → 业务表/用户/报告中心 → ECS 部署。
+第 3 步（已完成）：React 工作台改为事件驱动（SSE hook、按 category 的四类面板、ECharts 结构化图表、澄清卡片、报告中心/研究记录），见 frontend/README.md；真实模型 + mock 数据经 Vite 代理端到端通过。
+后续：业务表/用户/报告中心接口 → ECS 部署。

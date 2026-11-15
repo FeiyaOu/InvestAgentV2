@@ -1,4 +1,10 @@
-/** JWT session: token in localStorage, user profile from /api/auth/me, 401 anywhere logs out. */
+/**
+ * JWT session: token in localStorage, user profile from /api/auth/me, 401 anywhere logs out.
+ *
+ * The token the API client reads lives in a module-level variable that is updated synchronously
+ * in accept()/logout(). Registering it from an effect would race with child components whose
+ * effects (react-query fetches) run before the provider's own effects.
+ */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { ApiError, login as loginRequest, me, register as registerRequest, setAuthHandlers } from "../api/client";
 
@@ -37,20 +43,32 @@ function writeToken(token: string | null) {
   }
 }
 
+let currentToken: string | null = readToken();
+let unauthorizedListener: () => void = () => undefined;
+setAuthHandlers({ getToken: () => currentToken, onUnauthorized: () => unauthorizedListener() });
+
+function setCurrentToken(token: string | null) {
+  currentToken = token;
+  writeToken(token);
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(readToken);
+  const [token, setToken] = useState<string | null>(currentToken);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [ready, setReady] = useState(false);
 
   const logout = useCallback(() => {
-    writeToken(null);
+    setCurrentToken(null);
     setToken(null);
     setUser(null);
   }, []);
 
   useEffect(() => {
-    setAuthHandlers({ getToken: () => token, onUnauthorized: logout });
-  }, [token, logout]);
+    unauthorizedListener = logout;
+    return () => {
+      unauthorizedListener = () => undefined;
+    };
+  }, [logout]);
 
   useEffect(() => {
     if (!token) {
@@ -71,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [token, logout]);
 
   const accept = (body: { access_token: string; user: UserProfile }) => {
-    writeToken(body.access_token);
+    setCurrentToken(body.access_token); // Synchronous: any fetch in the next render already carries it.
     setUser(body.user);
     setToken(body.access_token);
   };

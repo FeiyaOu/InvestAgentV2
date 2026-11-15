@@ -39,3 +39,8 @@ openevals>=0.1
 
 # LangSmith — dataset management and batch evaluation (optional)
 langsmith>=0.9
+
+# ---- V4: durable conversation state ----
+# Postgres checkpointer for production threads; SQLite for local development/tests
+langgraph-checkpoint-sqlite>=2.0
+langgraph-checkpoint-postgres>=2.0

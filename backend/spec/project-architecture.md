@@ -33,9 +33,9 @@ Planner 产生四类任务和依赖。Supervisor 是确定性顺序调度图，�
 - 子图通过显式适配输入和结果；父级只接回 task_results、supervisor_status、supervisor_error。
 - TaskResult 约束终止状态、结果与错误的一致性；领域内容仍由各自模型和 validate_report() 验证。
 
-当前不启用 checkpoint。每请求重新初始化，Streamlit 显式传入最近三轮文本摘要。
-refresh / 重启可能丢失会话；thread_id 不再是公开 API 参数，也不代表自动记忆。
-未来数据库、多轮恢复和并行 reducer 需要独立设计。
+V4（2026-11-15）起支持可选 checkpointer：`create_invest_agent(checkpointer=...)` 后同一 thread_id
+累积 `turns`，Planner 上下文由 turns 推导，澄清通过 interrupt 挂起/恢复。无 checkpointer 时行为不变。
+Streamlit 调试面板仍显式传摘要。设计与边界见 [多轮会话规格](conversation-memory.md)。
 
 ## 3. 报告子图与数据层
 
@@ -182,3 +182,11 @@ TaskError 移至 core/errors.py，使 specialists 不反向依赖 orchestration�
 主题在 `.streamlit/config.toml`；静态外观在 `app/ui_shell.py`（自有 `zh-*` 样式类，内部选择器仅用 `st-key-*`）；
 进度面板由 `app/progress.py` 纯函数从真实规划与任务事件推导。原型中的置信度、领先方、已交叉验证、
 超出现有能力的示例与“数据服务正常”均未采用。持久化（历史、报告库、收藏）与 PDF 不在本次范围。
+
+
+## V4 产品化（2026-11-15 起）
+
+目标：核心库零改动迁入 backend/，新增薄 FastAPI 服务层与 React 工作台，PostgreSQL 同库承载业务表与
+PostgresSaver checkpoint，单台阿里云 ECS Docker Compose 部署。已否决 LangGraph Server 与 Vercel+FC+Neon。
+第 1 步（已完成）：父图跨轮 `turns` 与 interrupt 澄清，见 [多轮会话规格](conversation-memory.md)。
+后续：FastAPI runs/SSE 与事件归并器 → React 数据驱动改造 → 业务表/用户/报告中心 → ECS 部署。

@@ -1,16 +1,23 @@
-"""Public entrypoints for the request-local Planner/Supervisor/Composer graph.
+"""Public entrypoints for the Planner/Supervisor/Composer graph.
 
-Legacy processing_mode, top-level report outputs and automatic thread memory
-are no longer part of this API. Report internals remain in report_graph.py.
+run_invest_agent stays request-local with caller-supplied context. Durable
+multi-turn threads come from create_invest_agent(checkpointer=...). Legacy
+processing_mode and top-level report outputs are not part of this API.
 """
 from langchain_core.runnables import RunnableConfig
 
 from src.orchestration.parent_graph import create_parent_graph
 
 
-def create_invest_agent():
-    """Return the canonical parent graph, without a private checkpointer."""
-    return create_parent_graph()
+def create_invest_agent(*, checkpointer=None):
+    """Return the canonical parent graph.
+
+    Stateless by default. Pass a LangGraph checkpointer (SqliteSaver locally,
+    PostgresSaver in production) to get durable threads: invoke with
+    config={"configurable": {"thread_id": ...}} and the thread accumulates turns,
+    derives planner context from them, and suspends clarification via interrupt.
+    """
+    return create_parent_graph(checkpointer=checkpointer)
 
 
 def run_invest_agent(user_query: str, *, conversation_context: str = "",

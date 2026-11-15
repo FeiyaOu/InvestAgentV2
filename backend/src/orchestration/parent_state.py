@@ -1,5 +1,9 @@
-"""Request-local parent state. No graph, persistence, or child messages here."""
-from typing import Literal
+"""Parent state: per-request outputs plus the thread-scoped turn history.
+
+Per-request fields are rebuilt by `initialize` on every invocation. `turns` is the
+only cross-turn channel; it accumulates under a checkpointer and is never reset.
+"""
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 from typing_extensions import TypedDict
@@ -15,9 +19,31 @@ class ParentRequest(BaseModel):
     report_parameters: dict[str, ReportParameters] = Field(default_factory=dict)
 
 
+class ConversationTurn(TypedDict):
+    query: str
+    response_preview: str
+    status: str
+    clarifications: list[str]
+    completed_at: str
+
+
+def add_turns(left: list[dict] | None, right: list[dict] | None) -> list[dict]:
+    """Append-only reducer; a checkpointer makes this the durable thread history."""
+    return list(left or []) + list(right or [])
+
+
+def summarize_turns(turns: list[dict], *, limit: int = 3) -> str:
+    """Planner context derived from stored turns; same shape the Streamlit shell used to build."""
+    return "\n\n".join(f"用户：{turn['query'][:800]}\n回答摘要：{turn.get('response_preview', '')[:1200]}"
+                       for turn in turns[-limit:])
+
+
 class ParentState(TypedDict, total=False):
     user_query: str
     conversation_context: str
+    turns: Annotated[list[dict], add_turns]
+    clarification_rounds: int
+    clarifications: list[str]
     report_parameters: dict[str, dict]
     plan: dict | None
     planning_status: Literal["ready", "needs_clarification", "failed"] | None
@@ -42,4 +68,4 @@ def create_parent_state(user_query: str, *, conversation_context: str = "",
             "planning_error": None, "planning_attempts": 0, "task_results": {},
             "supervisor_status": None, "supervisor_error": None,
             "final_response": None, "composition_status": None, "composition_error": None,
-            "composition_summary": None}
+            "composition_summary": None, "clarification_rounds": 0, "clarifications": []}

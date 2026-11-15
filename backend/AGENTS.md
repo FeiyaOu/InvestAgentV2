@@ -8,7 +8,7 @@
 任务型智能投研助手：用户输入 → Planner → Supervisor → Composer。
 - 数据任务调用 Market Data 子图；明确报告请求调用原报告子图。
 - Analytics 已接入计算、汇总与图表；Strategy/Risk V1 已接入约束检查和静态压力测试。
-- 无 checkpoint 自动记忆；Streamlit 显式传入本会话摘要。
+- 可选 checkpointer：有则按 thread 累积 turns 并支持 interrupt 澄清；无则请求级无状态（见 spec/conversation-memory.md）。
 
 ## 关键文件导航
 
@@ -21,7 +21,8 @@
 | `spec/analysis-strategy-upgrade.md` | 分析与策略能力升级（V2 阶段 1–3）|
 | `spec/workflow-evolution.md` | 工作流演进与历次决策记录（进展常比主规格更新）|
 | `src/agent.py` | 公共门面（调用 orchestration/parent_graph.py）|
-| `src/orchestration/parent_graph.py` | 父图接线；planner / supervisor / composer / task_contracts 同目录 |
+| `src/orchestration/parent_graph.py` | 父图接线（initialize/planner/clarify/supervisor/composer/record_turn）；planner / supervisor / composer / task_contracts 同目录 |
+| `spec/conversation-memory.md` | V4 多轮会话、turns reducer 与 interrupt 澄清设计 |
 | `src/data/tools.py` | AKShare 工具函数（`@tool` 装饰器，含 fallback）|
 | `src/specialists/report/stages/reporter.py` | `validate_report()`（唯一报告校验入口）|
 | `src/specialists/report/stages/validator.py` | 校验节点（触发有向环②的地方）|

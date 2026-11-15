@@ -1,71 +1,40 @@
 /**
- * Per-browser session: the active conversation id and the runs started from this device.
- * Server-side persistence (users, conversation list) arrives in step 4; until then
- * localStorage is only a convenience and every read/write is guarded.
+ * Which conversation new questions go to. `null` means "start a new one": the server allocates
+ * the id on the first run and we adopt it. Persisted per browser as a convenience only.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 
-export interface SessionRun {
-  runId: string;
-  conversationId: string;
-  query: string;
-  createdAt: string;
-}
-
 interface SessionValue {
-  conversationId: string;
-  runs: SessionRun[];
-  newConversation: () => string;
-  addRun: (run: SessionRun) => void;
+  conversationId: string | null;
+  setConversationId: (id: string | null) => void;
+  newConversation: () => void;
 }
 
-const KEY = "investagent.session.v1";
-
-function freshId(prefix: string) {
-  const bytes = crypto.getRandomValues(new Uint8Array(8));
-  return `${prefix}_${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
-}
-
-function load(): { conversationId: string; runs: SessionRun[] } {
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed.conversationId === "string" && Array.isArray(parsed.runs)) return parsed;
-    }
-  } catch {
-    /* storage unavailable */
-  }
-  return { conversationId: freshId("conv"), runs: [] };
-}
-
+const KEY = "investagent.conversation.v2";
 const SessionContext = createContext<SessionValue | null>(null);
 
+function load(): string | null {
+  try {
+    return localStorage.getItem(KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState(load);
+  const [conversationId, setConversationId] = useState<string | null>(load);
 
   useEffect(() => {
     try {
-      localStorage.setItem(KEY, JSON.stringify(data));
+      if (conversationId) localStorage.setItem(KEY, conversationId);
+      else localStorage.removeItem(KEY);
     } catch {
       /* storage unavailable */
     }
-  }, [data]);
+  }, [conversationId]);
 
-  const newConversation = useCallback(() => {
-    const id = freshId("conv");
-    setData((current) => ({ ...current, conversationId: id }));
-    return id;
-  }, []);
-
-  const addRun = useCallback((run: SessionRun) => {
-    setData((current) => ({ ...current, runs: [run, ...current.runs.filter((r) => r.runId !== run.runId)].slice(0, 200) }));
-  }, []);
-
-  const value = useMemo(
-    () => ({ conversationId: data.conversationId, runs: data.runs, newConversation, addRun }),
-    [data, newConversation, addRun],
-  );
+  const newConversation = useCallback(() => setConversationId(null), []);
+  const value = useMemo(() => ({ conversationId, setConversationId, newConversation }), [conversationId, newConversation]);
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

@@ -1,12 +1,11 @@
 """FastAPI application factory. `uvicorn api.main:app --reload` for development."""
-import sqlite3
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routes import conversations, runs
+from api.db import init_db, make_engine, open_checkpointer
+from api.routes import auth, conversations, reports, runs
 from api.runs import RunManager, RunStore
 from api.settings import Settings, load_settings
 
@@ -20,43 +19,42 @@ def _langfuse_config():
         return {}
 
 
-def _open_graph(settings: Settings):
-    from langgraph.checkpoint.sqlite import SqliteSaver
-
-    from src.agent import create_invest_agent
-    Path(settings.checkpoint_db).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(settings.checkpoint_db, check_same_thread=False)
-    saver = SqliteSaver(conn)
-    saver.setup()
-    return create_invest_agent(checkpointer=saver), conn
-
-
 def create_app(*, graph=None, settings: Settings | None = None, max_workers: int | None = None) -> FastAPI:
     """Tests inject a scripted `graph`; production opens the checkpointed parent graph on startup."""
     settings = settings or load_settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        conn = None
+        from pathlib import Path
+        if settings.database_url.startswith("sqlite:///"):
+            Path(settings.database_url[len("sqlite:///"):]).parent.mkdir(parents=True, exist_ok=True)
+        engine = make_engine(settings.database_url)
+        init_db(engine)
+        app.state.engine = engine
+        close_checkpointer = None
         runtime_graph = graph
         if runtime_graph is None:
-            runtime_graph, conn = _open_graph(settings)
-        app.state.run_manager = RunManager(runtime_graph, RunStore(),
-                                           max_workers=max_workers or settings.max_concurrent_runs,
+            from src.agent import create_invest_agent
+            saver, close_checkpointer = open_checkpointer(settings.database_url)
+            runtime_graph = create_invest_agent(checkpointer=saver)
+        store = RunStore(engine)
+        store.recover()
+        app.state.run_manager = RunManager(runtime_graph, store, max_workers=max_workers or settings.max_concurrent_runs,
                                            config_factory=_langfuse_config)
         try:
             yield
         finally:
             app.state.run_manager.shutdown()
-            if conn is not None:
-                conn.close()
+            if close_checkpointer is not None:
+                close_checkpointer()
+            engine.dispose()
 
-    app = FastAPI(title="InvestAgent API", version="0.1.0", lifespan=lifespan)
+    app = FastAPI(title="InvestAgent API", version="0.2.0", lifespan=lifespan)
     app.state.settings = settings
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.cors_origins), allow_credentials=True,
                        allow_methods=["*"], allow_headers=["*"])
-    app.include_router(runs.router, prefix="/api")
-    app.include_router(conversations.router, prefix="/api")
+    for router in (auth.router, runs.router, conversations.router, reports.router):
+        app.include_router(router, prefix="/api")
 
     @app.get("/api/health")
     def health():

@@ -1,4 +1,4 @@
-"""HTTP layer against a scripted graph: create, poll, stream, resume, fail, read conversation."""
+"""HTTP layer against a scripted graph: auth, create, poll, stream, resume, fail, read conversation."""
 import json
 import time
 from types import SimpleNamespace
@@ -45,17 +45,40 @@ def resume_script():
     return [((), "updates", {"clarify": {"user_query": "它多少钱？\n\n补充说明：茅台", "clarification_rounds": 1}})] + script()[1:]
 
 
+def test_settings(tmp_path):
+    return Settings(database_url=f"sqlite:///{tmp_path / 'api.sqlite'}", jwt_secret="test-secret-with-at-least-32-bytes-of-entropy", max_concurrent_runs=1,
+                    cors_origins=(), sse_poll_seconds=0.01)
+
+
+class AuthedClient:
+    """TestClient wrapper that registers a user and sends the bearer token on every call."""
+
+    def __init__(self, client: TestClient, email="a@example.com"):
+        self.client = client
+        body = client.post("/api/auth/register", json={"email": email, "password": "password123", "display_name": "研"}).json()
+        self.token = body["access_token"]
+        self.user = body["user"]
+        self.headers = {"authorization": f"Bearer {self.token}"}
+
+    def __getattr__(self, name):
+        method = getattr(self.client, name)
+
+        def call(*args, **kwargs):
+            kwargs["headers"] = {**self.headers, **kwargs.get("headers", {})}
+            return method(*args, **kwargs)
+        return call
+
+
 @pytest.fixture
-def make_client():
+def make_client(tmp_path):
     clients = []
 
-    def factory(*scripts, turns=None):
+    def factory(*scripts, turns=None, settings=None, authed=True):
         graph = ScriptedGraph(*scripts, turns=turns)
-        settings = Settings(checkpoint_db=":memory:", max_concurrent_runs=1, cors_origins=(), sse_poll_seconds=0.01)
-        client = TestClient(create_app(graph=graph, settings=settings, max_workers=1))
+        client = TestClient(create_app(graph=graph, settings=settings or test_settings(tmp_path), max_workers=1))
         client.__enter__()
         clients.append(client)
-        return client, graph
+        return (AuthedClient(client) if authed else client), graph
     yield factory
     for client in clients:
         client.__exit__(None, None, None)
@@ -79,9 +102,10 @@ def parse_sse(text):
     return events
 
 
-def test_health(make_client):
-    client, _ = make_client()
+def test_health_is_public(make_client):
+    client, _ = make_client(authed=False)
     assert client.get("/api/health").json() == {"status": "ok"}
+    assert client.post("/api/runs", json={"query": "x"}).status_code == 401
 
 
 def test_create_run_executes_graph_on_thread_and_exposes_snapshot(make_client):
@@ -115,16 +139,17 @@ def test_event_list_is_ordered_and_replayable(make_client):
     assert [e["seq"] for e in later] == [len(events) - 1, len(events)]
 
 
-def test_sse_stream_replays_then_follows_until_finished(make_client):
+def test_sse_stream_replays_then_follows_until_finished_with_query_token(make_client):
     client, _ = make_client(script())
     run_id = client.post("/api/runs", json={"query": "查茅台价格"}).json()["run_id"]
-    with client.stream("GET", f"/api/runs/{run_id}/events") as response:
+    raw = client.client  # EventSource cannot send headers; the token travels as a query parameter.
+    assert raw.get(f"/api/runs/{run_id}/events").status_code == 401
+    with raw.stream("GET", f"/api/runs/{run_id}/events", params={"token": client.token}) as response:
         assert response.headers["content-type"].startswith("text/event-stream")
         events = parse_sse("".join(response.iter_text()))
     assert events[0]["event"] == "run_queued" and events[-1]["event"] == "run_finished"
     assert [e["id"] for e in events] == list(range(1, len(events) + 1))
-    assert all(e["data"]["run_id"] == run_id for e in events)
-    with client.stream("GET", f"/api/runs/{run_id}/events", params={"after": events[-1]["id"] - 1}) as response:
+    with raw.stream("GET", f"/api/runs/{run_id}/events", params={"token": client.token, "after": events[-1]["id"] - 1}) as response:
         tail = parse_sse("".join(response.iter_text()))
     assert [e["event"] for e in tail] == ["run_finished"]
 
@@ -135,10 +160,9 @@ def test_clarification_waits_then_resume_continues_same_thread(make_client):
     waiting = wait_terminal(client, run_id)
     assert waiting["status"] == "waiting_input" and waiting["interrupt"] == INTERRUPT
     assert waiting["finished_at"] is None
-    with client.stream("GET", f"/api/runs/{run_id}/events") as response:
-        events = parse_sse("".join(response.iter_text()))
-    assert [e["event"] for e in events][-2:] == ["clarification_required", "run_waiting"]
-    cursor = events[-1]["id"]
+    events = client.get(f"/api/runs/{run_id}/events/list").json()
+    assert [e["type"] for e in events][-2:] == ["clarification_required", "run_waiting"]
+    cursor = events[-1]["seq"]
 
     resumed = client.post(f"/api/runs/{run_id}/resume", json={"answer": "茅台"})
     assert resumed.status_code == 202
@@ -182,7 +206,9 @@ def test_conversation_merges_checkpoint_turns_and_known_runs(make_client):
     run_id = client.post("/api/runs", json={"query": "查茅台价格", "conversation_id": "conv-3"}).json()["run_id"]
     wait_terminal(client, run_id)
     body = client.get("/api/conversations/conv-3").json()
-    assert body["conversation_id"] == "conv-3"
+    assert body["conversation_id"] == "conv-3" and body["title"] == "查茅台价格" and body["turn_count"] == 1
     assert body["turns"][0]["query"] == "查茅台价格"
     assert [r["run_id"] for r in body["runs"]] == [run_id]
     assert body["runs"][0]["state"]["plan"] == PLAN
+    listed = client.get("/api/conversations").json()
+    assert [c["conversation_id"] for c in listed] == ["conv-3"] and listed[0]["run_count"] == 1

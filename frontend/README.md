@@ -15,14 +15,15 @@ npm run build
 ```text
 src/
   api/        types.ts（后端 Pydantic 契约镜像）· client.ts（fetch）· runView.ts（事件归并与进度）· useRun.ts（快照 + SSE）
-  state/      session.tsx：当前 conversation_id 与本浏览器发起的 runs（localStorage，仅作便利）
+  state/      auth.tsx：JWT 与用户资料（401 自动登出）· session.tsx：当前 conversation_id（服务端分配）
   components/ Icon · Markdown（禁用原始 HTML）· ResultPrimitives（状态徽标、表格、提示）
   charts/     ECharts 封装：LineChart / BarChart / Heatmap
   features/
+    auth/       登录/注册页
     home/       首页：输入框、示例卡片（与 backend/app/example_queries.py 一致）、能力介绍
     research/   RunPage：进度面板、澄清卡片、Answer（核心结论 + 按 category 分发的四类任务面板）
-    reports/    报告中心与阅读页；Markdown 导出结构与 backend/app/report_viewer.py 一致
-    history/    研究记录：GET /api/conversations/{id} 的 turns + 本地 runs
+    reports/    报告中心与阅读页：GET /api/reports，下载走 /api/reports/{id}/download
+    history/    研究记录：对话列表（可切换当前对话）、当前对话轮次、全部研究任务
 ```
 
 ## 数据流
@@ -40,4 +41,4 @@ src/
 - 不展示规格已否决的内容：置信度百分比（报告维度置信度除外，且注明含义）、领先方、已交叉验证、数据服务正常。
 - 模型文本经 react-markdown 渲染，`skipHtml`，仅 http(s) 链接可点击。
 - 新增样式使用 `zh-*` 前缀追加在 index.css 末尾，原型样式类保持可复用。
-- 持久化（用户、对话列表、报告库、HTML/PDF 下载）由第 4 步后端接口提供；当前报告中心与本地 runs 列表依赖服务进程内存。
+- 所有列表来自服务端业务表；浏览器只保存 JWT 与当前对话 id。SSE 以 `?token=` 携带 JWT（EventSource 不能设请求头）。

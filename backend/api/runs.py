@@ -1,7 +1,8 @@
-"""Run records, the in-process store, and the thread-pool runner around the parent graph.
+"""Run records, the database-backed store, and the thread-pool runner around the parent graph.
 
-The store is in-memory for now; the API shape (ordered events with seq numbers,
-replay via `after`) is what the database-backed store will keep in step 4.
+Live runs are held in memory for low-latency SSE; every event is also written through to
+run_events, and the terminal RunView is stored on the run row so a restarted process can
+still serve GET /runs/{id} and replay its events.
 """
 import json
 import threading
@@ -13,9 +14,12 @@ from uuid import uuid4
 
 from langgraph.types import Command
 
+from api import repository
+from api.db import session_scope
 from api.events import RunView, normalize, terminal_status
 
 TERMINAL = {"completed", "failed", "waiting_input"}
+RESTART_MESSAGE = "服务重启，运行中断；已保留已产生的事件，请重新提问。"
 
 
 def _now() -> str:
@@ -31,6 +35,7 @@ def jsonable(value):
 class RunRecord:
     run_id: str
     conversation_id: str
+    user_id: str
     query: str
     status: str = "queued"
     created_at: str = field(default_factory=_now)
@@ -40,24 +45,27 @@ class RunRecord:
     events: list[dict] = field(default_factory=list)
     view: RunView = field(default_factory=RunView)
     lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    store: "RunStore | None" = field(default=None, repr=False)
     _started_monotonic: float | None = field(default=None, repr=False)
-    _elapsed_final: float = field(default=0.0, repr=False)
+    _elapsed_final: float | None = field(default=None, repr=False)
 
     def append(self, event: dict) -> dict:
         with self.lock:
-            event = {"seq": len(self.events) + 1, "run_id": self.run_id, **jsonable(event)}
+            event = {"seq": len(self.events) + 1, "run_id": self.run_id, "at": _now(), **jsonable(event)}
             self.events.append(event)
-            return event
+        if self.store is not None:
+            self.store.persist_event(self.run_id, event)
+        return event
 
     def events_after(self, seq: int) -> list[dict]:
         with self.lock:
             return self.events[seq:]
 
     def elapsed(self) -> float | None:
+        if self._elapsed_final is not None:
+            return round(self._elapsed_final, 1)
         if self._started_monotonic is None:
             return None
-        if self.finished_at:
-            return round(self._elapsed_final, 1)
         return round(time.monotonic() - self._started_monotonic, 1)
 
     def snapshot(self) -> dict:
@@ -68,25 +76,92 @@ class RunRecord:
                              "event_count": len(self.events), **self.view.snapshot()})
 
 
+def _record_from_row(row: dict, events: list[dict]) -> RunRecord:
+    """Rebuild a finished run from storage; the stored RunView is authoritative, events are for replay."""
+    view = RunView()
+    snapshot = row.get("snapshot") or {}
+    view.state = snapshot.get("state", {})
+    view.report_progress = snapshot.get("report_progress", {})
+    view.analysis_snapshots = snapshot.get("analysis_snapshots", {})
+    view.strategy_series = snapshot.get("strategy_series", {})
+    view.planner_attempts = snapshot.get("planner_attempts", [])
+    view.active_task = snapshot.get("active_task")
+    view.active_category = snapshot.get("active_category")
+    view.interrupt = snapshot.get("interrupt")
+    record = RunRecord(run_id=row["run_id"], conversation_id=row["conversation_id"], user_id=row["user_id"],
+                       query=row["query"], status=row["status"], created_at=row["created_at"],
+                       started_at=row["started_at"], finished_at=row["finished_at"], error=row["error"],
+                       events=events, view=view)
+    record._elapsed_final = row.get("elapsed_seconds")
+    return record
+
+
 class RunStore:
-    def __init__(self):
-        self._runs: dict[str, RunRecord] = {}
+    """Live records in memory, everything written through to the database."""
+
+    def __init__(self, engine):
+        self.engine = engine
+        self._live: dict[str, RunRecord] = {}
         self._lock = threading.Lock()
 
-    def create(self, query: str, conversation_id: str) -> RunRecord:
-        record = RunRecord(run_id="run_" + uuid4().hex, conversation_id=conversation_id, query=query)
+    def create(self, *, query: str, conversation_id: str | None, user_id: str) -> RunRecord:
+        with session_scope(self.engine) as session:
+            conversation = repository.ensure_conversation(session, conversation_id=conversation_id, user_id=user_id,
+                                                          title_hint=query)
+            record = RunRecord(run_id="run_" + uuid4().hex, conversation_id=conversation.id, user_id=user_id,
+                               query=query, store=self)
+            repository.insert_run(session, run_id=record.run_id, conversation_id=conversation.id, user_id=user_id,
+                                  query=query)
+            repository.touch_conversation(session, conversation.id, status="running", counted=False)
         with self._lock:
-            self._runs[record.run_id] = record
+            self._live[record.run_id] = record
         return record
 
     def get(self, run_id: str) -> RunRecord | None:
         with self._lock:
-            return self._runs.get(run_id)
+            live = self._live.get(run_id)
+        if live is not None:
+            return live
+        with session_scope(self.engine) as session:
+            row = repository.load_run(session, run_id)
+            if row is None:
+                return None
+            data = repository.run_to_dict(row)
+            events = repository.load_events(session, run_id)
+        return _record_from_row(data, events)
+
+    def persist_event(self, run_id: str, event: dict) -> None:
+        with session_scope(self.engine) as session:
+            repository.append_event(session, run_id, event)
+
+    def persist_status(self, record: RunRecord) -> None:
+        terminal = record.status in TERMINAL
+        with record.lock:
+            fields = {"status": record.status, "started_at": record.started_at, "finished_at": record.finished_at,
+                      "error": record.error, "elapsed_seconds": record.elapsed(),
+                      "snapshot": jsonable(record.view.snapshot()) if terminal else None}
+        with session_scope(self.engine) as session:
+            repository.update_run(session, record.run_id, **fields)
+            if record.status in {"completed", "failed"}:
+                repository.save_reports(session, run_id=record.run_id, conversation_id=record.conversation_id,
+                                        user_id=record.user_id, state=fields["snapshot"]["state"])
+                status = record.view.state.get("supervisor_status") or record.view.state.get("planning_status") or record.status
+                repository.touch_conversation(session, record.conversation_id, status=status, counted=True)
+            elif record.status == "waiting_input":
+                repository.touch_conversation(session, record.conversation_id, status="waiting_input", counted=False)
+        if record.status in {"completed", "failed"}:
+            with self._lock:
+                self._live.pop(record.run_id, None)
+            record.store = None
 
     def for_conversation(self, conversation_id: str) -> list[RunRecord]:
-        with self._lock:
-            return sorted((r for r in self._runs.values() if r.conversation_id == conversation_id),
-                          key=lambda r: r.created_at)
+        with session_scope(self.engine) as session:
+            rows = [repository.run_to_dict(r) for r in repository.runs_for_conversation(session, conversation_id)]
+        return [self.get(row["run_id"]) or _record_from_row(row, []) for row in rows]
+
+    def recover(self) -> int:
+        with session_scope(self.engine) as session:
+            return repository.fail_unfinished_runs(session, RESTART_MESSAGE)
 
 
 class RunManager:
@@ -97,8 +172,8 @@ class RunManager:
         self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="invest-run")
         self._config_factory = config_factory or (lambda: {})
 
-    def start(self, query: str, conversation_id: str | None = None) -> RunRecord:
-        record = self.store.create(query.strip(), conversation_id or "conv_" + uuid4().hex)
+    def start(self, *, query: str, conversation_id: str | None, user_id: str) -> RunRecord:
+        record = self.store.create(query=query.strip(), conversation_id=conversation_id, user_id=user_id)
         record.append({"type": "run_queued", "scope": "parent", "task_id": None, "category": None,
                        "payload": {"query": record.query, "conversation_id": record.conversation_id}})
         self._pool.submit(self._execute, record, {"user_query": record.query})
@@ -110,8 +185,10 @@ class RunManager:
                 raise ValueError("run is not waiting for input")
             record.status = "queued"
             record.view.interrupt = None
+            record.store = record.store or self.store
         record.append({"type": "clarification_answered", "scope": "parent", "task_id": None, "category": None,
                        "payload": {"answer": answer}})
+        self.store.persist_status(record)
         self._pool.submit(self._execute, record, Command(resume=answer))
         return record
 
@@ -130,6 +207,7 @@ class RunManager:
             record.finished_at, record.error = None, None
         record.append({"type": "run_started", "scope": "parent", "task_id": None, "category": None,
                        "payload": {"resumed": isinstance(payload, Command)}})
+        self.store.persist_status(record)
         try:
             for namespace, mode, update in self.graph.stream(payload, config=self._config(record), subgraphs=True,
                                                               stream_mode=["updates", "custom"]):
@@ -149,3 +227,4 @@ class RunManager:
         kind = "run_waiting" if status == "waiting_input" else "run_finished"
         record.append({"type": kind, "scope": "parent", "task_id": None, "category": None,
                        "payload": {"status": status, "error": record.error, "elapsed_seconds": record.elapsed()}})
+        self.store.persist_status(record)

@@ -6,7 +6,6 @@ import type { RunSnapshot, TaskCategory } from "../../api/types";
 import { Icon } from "../../components/Icon";
 import { Markdown } from "../../components/Markdown";
 import { Notice, SectionTitle } from "../../components/ResultPrimitives";
-import { useSession } from "../../state/session";
 import { AnalyticsPanel } from "./panels/AnalyticsPanel";
 import { MarketDataPanel } from "./panels/MarketDataPanel";
 import { ReportPanel } from "./panels/ReportPanel";
@@ -204,15 +203,13 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
   const { runId } = useParams();
   const navigate = useNavigate();
   const { snapshot, loading, error, elapsed, resume } = useRun(runId);
-  const { runs } = useSession();
   const [followUp, setFollowUp] = useState("");
-  const known = runs.find((r) => r.runId === runId);
 
   if (error) {
     return (
       <div className="result-content">
         <div className="result-wrap">
-          <Notice tone="error">无法读取这次研究：{error}。服务重启后内存中的运行记录会丢失，历史对话仍可在「研究记录」查看。</Notice>
+          <Notice tone="error">无法读取这次研究：{error}</Notice>
           <button className="run-button" onClick={() => navigate("/")}>
             返回首页
           </button>
@@ -226,7 +223,7 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
         <div className="result-wrap">
           <div className="question-card">
             <span>你的问题</span>
-            <h1>{known?.query ?? "加载中…"}</h1>
+            <h1>加载中…</h1>
           </div>
         </div>
       </div>

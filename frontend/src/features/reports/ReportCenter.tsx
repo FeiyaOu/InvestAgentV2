@@ -1,84 +1,65 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { getRun } from "../../api/client";
+import { downloadReport, getReport, listReports } from "../../api/client";
+import type { ReportSummary } from "../../api/types";
 import { Icon } from "../../components/Icon";
 import { Notice } from "../../components/ResultPrimitives";
-import { useSession } from "../../state/session";
-import { DIMENSIONS, RATINGS, downloadText, reportEntries, reportMarkdown, type ReportEntry } from "./reportModel";
 
-function useSessionReports() {
-  const { runs } = useSession();
-  const queries = useQueries({
-    queries: runs.map((run) => ({
-      queryKey: ["run", run.runId],
-      queryFn: () => getRun(run.runId),
-      retry: false,
-      staleTime: 30_000,
-    })),
-  });
-  const entries: ReportEntry[] = [];
-  queries.forEach((q) => q.data && entries.push(...reportEntries(q.data)));
-  const pending = queries.some((q) => q.isLoading);
-  const missing = queries.filter((q) => q.isError).length;
-  return { entries, pending, missing };
-}
+export const DIMENSIONS: Record<string, string> = { fundamental: "基本面", market: "市场", news: "新闻", analyst: "分析师" };
+export const RATINGS: Record<string, string> = { buy: "买入", hold: "持有", sell: "卖出" };
 
-function statusText(entry: ReportEntry) {
-  if (!entry.report) return entry.status === "failed" ? "生成失败" : "生成中";
-  return entry.draft ? "草稿" : "已完成";
+function useReports() {
+  return useQuery({ queryKey: ["reports"], queryFn: listReports, staleTime: 10_000 });
 }
 
 export function ReportCenter() {
-  const { entries, pending, missing } = useSessionReports();
+  const reports = useReports();
   const navigate = useNavigate();
+  const items: ReportSummary[] = reports.data ?? [];
   return (
     <div className="workspace-page">
       <div className="workspace-head">
         <div>
           <span>RESEARCH LIBRARY</span>
           <h1>报告中心</h1>
-          <p>集中阅读与下载由研究任务生成的完整报告。当前列出本浏览器发起的研究。</p>
+          <p>集中阅读与下载由研究任务生成的完整报告。</p>
         </div>
         <button onClick={() => navigate("/", { state: { prefill: "请生成新能源行业未来一年的投研报告，重点关注光伏。" } })}>
           <Icon name="plus" size={16} /> 试试生成报告
         </button>
       </div>
-      {missing > 0 && <Notice tone="warn">有 {missing} 次研究的运行记录已不在服务内存中（服务重启会清空），持久化将在下一步接入。</Notice>}
-      {entries.length === 0 && !pending && (
+      {reports.error && <Notice tone="error">无法读取报告列表：{String(reports.error)}</Notice>}
+      {reports.isSuccess && items.length === 0 && (
         <Notice>还没有报告。在首页提出“生成 XX 行业投研报告”的请求，完成后会出现在这里。</Notice>
       )}
       <div className="report-library">
-        {entries.map((entry) => (
-          <article key={`${entry.runId}-${entry.taskId}`}>
-            <Link className={`library-cover ${entry.draft ? "gold" : "green"}`} to={entry.report ? `/reports/${entry.runId}/${entry.taskId}` : `/runs/${entry.runId}`}>
+        {items.map((entry) => (
+          <article key={entry.id}>
+            <Link className={`library-cover ${entry.draft ? "gold" : "green"}`} to={`/reports/${entry.run_id}/${entry.task_id}`}>
               <span>ZH RESEARCH</span>
-              <b>{entry.report?.research_topic ?? entry.question}</b>
-              <small>{entry.report?.report_date ?? ""}</small>
+              <b>{entry.title || entry.question}</b>
+              <small>{entry.report_date}</small>
             </Link>
             <div className="library-info">
-              <span>{entry.report?.industry_focus ?? "研究报告"}</span>
-              <h2>{entry.report?.research_topic ?? entry.question}</h2>
+              <span>{entry.industry_focus || "研究报告"}</span>
+              <h2>{entry.title || entry.question}</h2>
               <p>
-                {statusText(entry)} · {entry.report ? `${RATINGS[entry.report.overall_rating] ?? entry.report.overall_rating} · ` : ""}
-                {new Date(entry.createdAt).toLocaleString("zh-CN")}
+                {entry.draft ? "草稿" : "已完成"} · {RATINGS[entry.overall_rating] ?? entry.overall_rating} · {new Date(entry.created_at).toLocaleString("zh-CN")}
               </p>
             </div>
             <div className="library-actions">
-              {entry.report ? (
-                <>
-                  <Link to={`/reports/${entry.runId}/${entry.taskId}`}>阅读</Link>
-                  <button aria-label="下载 Markdown" onClick={() => downloadText(`${entry.report!.research_topic || "report"}${entry.draft ? "_draft" : ""}.md`, reportMarkdown(entry))}>
-                    <Icon name="download" size={15} />
-                  </button>
-                </>
-              ) : (
-                <Link to={`/runs/${entry.runId}`}>查看研究</Link>
-              )}
+              <Link to={`/reports/${entry.run_id}/${entry.task_id}`}>阅读</Link>
+              <button aria-label="下载 Markdown" title="下载 Markdown" onClick={() => void downloadReport(entry.id, "md")}>
+                <Icon name="download" size={15} />
+              </button>
+              <button aria-label="下载 HTML" title="下载 HTML" onClick={() => void downloadReport(entry.id, "html")}>
+                <Icon name="file" size={15} />
+              </button>
             </div>
           </article>
         ))}
       </div>
-      {entries.length > 0 && <div className="library-foot">已显示 {entries.length} 份报告</div>}
+      {items.length > 0 && <div className="library-foot">已显示 {items.length} 份报告</div>}
     </div>
   );
 }
@@ -86,10 +67,15 @@ export function ReportCenter() {
 export function ReportReader() {
   const { runId, taskId } = useParams();
   const navigate = useNavigate();
-  const { entries, pending } = useSessionReports();
-  const entry = entries.find((e) => e.runId === runId && e.taskId === taskId);
-  if (pending && !entry) return null;
-  if (!entry || !entry.report) {
+  const reports = useReports();
+  const summary = reports.data?.find((r) => r.run_id === runId && r.task_id === taskId);
+  const detail = useQuery({
+    queryKey: ["report", summary?.id],
+    queryFn: () => getReport(summary!.id),
+    enabled: Boolean(summary),
+  });
+  if (reports.isLoading || (summary && detail.isLoading)) return null;
+  if (!summary || !detail.data) {
     return (
       <div className="report-overlay">
         <div className="report-toolbar">
@@ -103,13 +89,19 @@ export function ReportReader() {
         <div className="report-reader">
           <div className="report-pages">
             <article className="report-page">
-              <Notice tone="warn">报告内容不是可读取的结构化报告，或该次研究已不在服务内存中。</Notice>
+              <Notice tone="warn">这份报告尚未生成完成，或不是可读取的结构化报告。</Notice>
+              {runId && (
+                <Link className="zh-link-button" to={`/runs/${runId}`}>
+                  查看对应研究
+                </Link>
+              )}
             </article>
           </div>
         </div>
       </div>
     );
   }
+  const entry = detail.data;
   const r = entry.report;
   const chapters = ["核心观点", ...Object.entries(DIMENSIONS).filter(([k]) => r.dimensions?.[k]).map(([, v]) => v), "证据与风险", "来源"];
   return (
@@ -125,8 +117,11 @@ export function ReportReader() {
           </span>
         </div>
         <div className="report-toolbar-actions">
-          <button onClick={() => downloadText(`${r.research_topic || "report"}${entry.draft ? "_draft" : ""}.md`, reportMarkdown(entry))}>
-            <Icon name="download" size={16} /> 下载 Markdown
+          <button onClick={() => void downloadReport(entry.id, "md")}>
+            <Icon name="download" size={16} /> Markdown
+          </button>
+          <button onClick={() => void downloadReport(entry.id, "html")}>
+            <Icon name="download" size={16} /> HTML
           </button>
         </div>
       </div>
@@ -155,10 +150,10 @@ export function ReportReader() {
               <span>模型评级 {RATINGS[r.overall_rating] ?? r.overall_rating}</span>
             </div>
             {entry.draft && <Notice tone="warn">草稿：报告未完全通过 C1–C7 校验或任务仅部分完成。</Notice>}
-            {entry.errors.length > 0 && (
+            {entry.validation_errors.length > 0 && (
               <ul className="zh-errors">
-                {entry.errors.map((e, i) => (
-                  <li key={i}>{[e.constraint, e.message].filter(Boolean).join("：")}</li>
+                {entry.validation_errors.map((e, i) => (
+                  <li key={i}>{e.detail}</li>
                 ))}
               </ul>
             )}

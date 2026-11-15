@@ -150,9 +150,15 @@ export interface FinalReport {
   sources: string[];
 }
 
+export interface ValidationError {
+  type: string;
+  detail: string;
+  fix?: string;
+}
+
 export interface ReportTaskResult {
   final_report?: FinalReport | string | null;
-  validation_errors?: { constraint?: string; message?: string }[] | null;
+  validation_errors?: ValidationError[] | null;
   perception_data?: unknown;
   world_model?: unknown;
   reasoning_plans?: unknown;
@@ -229,6 +235,52 @@ export interface ConversationTurn {
 
 export interface ConversationView {
   conversation_id: string;
+  title: string;
+  turn_count: number;
   turns: ConversationTurn[];
   runs: RunSnapshot[];
+}
+
+export interface RunListItem {
+  run_id: string;
+  conversation_id: string;
+  query: string;
+  status: RunStatus;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  elapsed_seconds: number | null;
+  error: { type: string; message: string } | null;
+  event_count: number;
+}
+
+export interface ConversationSummary {
+  conversation_id: string;
+  title: string;
+  turn_count: number;
+  last_status: string | null;
+  run_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReportSummary {
+  id: string;
+  run_id: string;
+  task_id: string;
+  conversation_id: string;
+  question: string;
+  title: string;
+  industry_focus: string;
+  time_horizon: string;
+  report_date: string;
+  overall_rating: string;
+  status: "completed" | "partial";
+  draft: boolean;
+  validation_errors: ValidationError[];
+  created_at: string;
+}
+
+export interface ReportDetail extends ReportSummary {
+  report: FinalReport;
 }

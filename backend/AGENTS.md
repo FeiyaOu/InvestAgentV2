@@ -24,6 +24,8 @@
 | `src/orchestration/parent_graph.py` | 父图接线（initialize/planner/clarify/supervisor/composer/record_turn）；planner / supervisor / composer / task_contracts 同目录 |
 | `spec/conversation-memory.md` | V4 多轮会话、turns reducer 与 interrupt 澄清设计 |
 | `spec/api-service.md` | V4 FastAPI 服务层：runs/SSE/resume 接口与事件归并规则 |
+| `spec/persistence-and-accounts.md` | V4 业务表、JWT 账号、归属校验、报告库与重启恢复 |
+| `services/report_export.py` | 报告 Markdown/HTML 导出唯一实现（API 与 Streamlit 共用） |
 | `api/events.py` | 事件归并器（Streamlit `_run` 的纯函数版本），前后端共用的事件契约 |
 | `src/data/tools.py` | AKShare 工具函数（`@tool` 装饰器，含 fallback）|
 | `src/specialists/report/stages/reporter.py` | `validate_report()`（唯一报告校验入口）|
@@ -32,7 +34,8 @@
 ## src 结构
 
 ```text
-api/                 FastAPI 服务层（main·settings·events·runs·routes/），依赖 src 与 app.progress，不被 src 依赖
+api/                 FastAPI 服务层（main·settings·db·models·repository·security·deps·events·runs·routes/）
+services/            跨壳层共享的纯函数（report_export）
 src/agent.py         公共门面
 src/core/            llm、datasets、errors、validation_diagnostics（无业务依赖）
 src/data/            AKShare 工具（tools.py）
@@ -63,7 +66,7 @@ python linters/check_agent_structure.py       # 结构 lint 检查
 
 ## 架构约束
 
-- 依赖方向：`core / data ← specialists ← orchestration ← agent.py ← api / app`；api 与 app 互不依赖；specialists 不 import orchestration
+- 依赖方向：`core / data ← specialists ← orchestration ← agent.py ← services ← api / app`；api 与 app 互不依赖；specialists 不 import orchestration
 - AKShare 只在 `src/data/tools.py` 与离线刷新脚本 `scripts/refresh_security_directory.py` 中调用，节点模块不直接调用 AKShare
 - 证券代码→简称核对只读仓库快照 `src/data/a_share_directory.json`，请求路径不联网拉代码表；需要时运行刷新脚本更新
 - LLM 调用只在节点模块中发生：`orchestration/planner.py`、`composer.py`、`specialists/*/nodes.py`、`specialists/report/stages/`；`agent.py` 只负责编排

@@ -1,20 +1,32 @@
-"""Thread history read from the checkpointer plus the runs this process knows about."""
-from fastapi import APIRouter, HTTPException, Request
+"""The user's conversations: list from business tables, detail merges checkpointer turns and runs."""
+from fastapi import APIRouter, Depends, HTTPException, Request
 
-from api.schemas import ConversationView
+from api import repository
+from api.db import session_scope
+from api.deps import CurrentUser, current_user
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
-@router.get("/{conversation_id}", response_model=ConversationView)
-def get_conversation(conversation_id: str, request: Request):
+@router.get("")
+def list_conversations(request: Request, user: CurrentUser = Depends(current_user)):
+    with session_scope(request.app.state.engine) as session:
+        return repository.list_conversations(session, user.id)
+
+
+@router.get("/{conversation_id}")
+def get_conversation(conversation_id: str, request: Request, user: CurrentUser = Depends(current_user)):
+    with session_scope(request.app.state.engine) as session:
+        conversation = repository.conversation_for_user(session, conversation_id, user.id)
+        if conversation is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        title, turn_count = conversation.title, conversation.turn_count
     manager = request.app.state.run_manager
-    runs = [r.snapshot() for r in manager.store.for_conversation(conversation_id)]
+    runs = [{k: v for k, v in r.snapshot().items() if k not in {"analysis_snapshots", "strategy_series", "report_progress", "planner_attempts"}}
+            for r in manager.store.for_conversation(conversation_id)]
     try:
         snapshot = manager.graph.get_state({"configurable": {"thread_id": conversation_id}})
         turns = list((snapshot.values or {}).get("turns") or [])
     except Exception:  # noqa: BLE001 - a stateless graph has no checkpointer to read.
         turns = []
-    if not runs and not turns:
-        raise HTTPException(status_code=404, detail="conversation not found")
-    return ConversationView(conversation_id=conversation_id, turns=turns, runs=runs)
+    return {"conversation_id": conversation_id, "title": title, "turn_count": turn_count, "turns": turns, "runs": runs}

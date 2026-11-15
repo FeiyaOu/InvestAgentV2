@@ -191,4 +191,6 @@ PostgresSaver checkpoint，单台阿里云 ECS Docker Compose 部署。已否决
 第 1 步（已完成）：父图跨轮 `turns` 与 interrupt 澄清，见 [多轮会话规格](conversation-memory.md)。
 第 2 步（已完成）：FastAPI runs/SSE/resume 与事件归并器，见 [服务层规格](api-service.md)；真实模型 + mock 数据端到端已通过。
 第 3 步（已完成）：React 工作台改为事件驱动（SSE hook、按 category 的四类面板、ECharts 结构化图表、澄清卡片、报告中心/研究记录），见 frontend/README.md；真实模型 + mock 数据经 Vite 代理端到端通过。
-后续：业务表/用户/报告中心接口 → ECS 部署。
+第 4 步（已完成）：SQLModel 业务表（users/conversations/runs/run_events/reports）与 checkpoint 同库，JWT 账号与归属校验，
+报告库与 md/html 下载，重启恢复；前端登录页与服务端列表，见 [持久化与账号规格](persistence-and-accounts.md)。
+后续：ECS Docker Compose 部署（nginx + fastapi + postgres），Postgres 路径实机验证。

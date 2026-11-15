@@ -1,0 +1,184 @@
+# InvestAgent — 当前项目架构
+
+> 架构权威文档。2026-11-10：公共入口与 Streamlit 已完成父图迁移。
+> 历史设计及分步决策见 [工作流演进规格](workflow-evolution.md)，最新迁移见第 16 节。
+
+## 1. 请求级父图
+
+```text
+src/agent.py 公共门面 → create_parent_graph()
+START → initialize → planner → supervisor → composer → END
+             │           └─ 澄清/失败 ────────┘
+             └─ 无效输入 ────────────────────┘
+```
+
+Planner 产生四类任务和依赖。Supervisor 是确定性顺序调度图，不额外调用 LLM：
+
+| 类别 | 实现 | 当前状态 |
+|---|---|---|
+| market_data | src/specialists/market_data/agent.py | 已接入，工具循环与输出验证 |
+| analytics | src/specialists/analytics/agent.py | 已接入调度、分析汇总与 Plotly 看板 |
+| investment_strategy | src/specialists/strategy/agent.py | V1已接入：证据解释、约束与静态压力测试 |
+| report | src/specialists/report/graph.py | 已接入，原六节点流程 |
+
+独立任务依次执行；依赖任务等待前置结果。partial 可传递可用证据，失败依赖阻断下游。
+已完成任务结果先供 UI 展示，再由 Composer 汇总；不进行无界重试或动态重新规划。
+
+## 2. 状态边界
+
+- ParentState：输入、计划、各阶段状态/错误、按 task_id 分组的 TaskResult、最终回答。
+- SupervisorState：局部调度状态，last_task_id 不进入父级。
+- MarketDataState：局部 messages、工具预算、证据与结果，不充当用户对话历史。
+- InvestAgentState：原报告局部状态，四阶段数据、final_report、validator 重试字段保持兼容。
+- 子图通过显式适配输入和结果；父级只接回 task_results、supervisor_status、supervisor_error。
+- TaskResult 约束终止状态、结果与错误的一致性；领域内容仍由各自模型和 validate_report() 验证。
+
+当前不启用 checkpoint。每请求重新初始化，Streamlit 显式传入最近三轮文本摘要。
+refresh / 重启可能丢失会话；thread_id 不再是公开 API 参数，也不代表自动记忆。
+未来数据库、多轮恢复和并行 reducer 需要独立设计。
+
+## 3. 报告子图与数据层
+
+```text
+perception → modeling → reasoning → decision → report → validator
+                                      ↑                   │
+                                      └─ 现有重试条件 ─────┘
+```
+
+节点函数、prompt、工具调用、输出格式与实际校验重试行为保持不变。
+校验只通过 validate_report()；C1–C7 见 [主规格](invest_spec.md)。
+工具 fallback 和模拟标记保留。AKShare 只在 src/data/tools.py 调用。
+Market Data 使用五个文本工具及 get_price_history / get_valuation_snapshot 两个结构化采集工具；财务报表等未实现能力不自动提供。
+报告参数缺失时当前适配仍用完整任务描述，准确抽取主题/行业/时间是待完善事项。
+
+## 4. 展示和可观测性
+
+Streamlit 直接调用父图，无独立 HTTP 后端。
+通过 updates + custom / subgraphs=True 消费事件，task_started 标识子图所属任务。
+只将根事件合并到父级快照，任务结果与报告进度单独展示；不调用 get_state()。
+页面显示任务列表、数据证据、分析状态、每个报告的四节点输出和执行记录。
+最终报告正文与 Markdown/HTML 下载见报告中心（见下文报告交付展示层）；评估结果仍不在 UI 展示。
+LangFuse 回调可选，未配置时不影响运行；追踪不等于会话持久化。
+
+## 5. 入口与验证
+
+```python
+from src.agent import run_invest_agent
+state = run_invest_agent("茅台最新价格？", conversation_context="")
+print(state["final_response"])
+```
+
+不再提供 assess/reactive 编排；run_invest_agent 的旧 thread_id 和全局报告参数已移除。
+显式按任务 ID 的 report_parameters 和 RunnableConfig 为可选输入。
+create_response_graph() 保留为已有计划的执行/汇总组件，不作为另一条旧 Reactive 入口。
+C8 为四类任务与有效计划，C9 为非空用户响应；结构 lint 检查 TaskCategory。
+
+- 单元与 AppTest 测试全部 mock 外部模型/API。
+- integration 显式启用并要求真实 key，不在日常单元检查中运行。
+- 启动：make run；验证：pytest tests/ -q、python linters/check_agent_structure.py。
+
+
+## Analytics 建设进展（2026-11-12）
+
+已完成数据契约、请求内存储、结构化价格/估值快照采集、四个V1计算工具和独立Analytics子图。
+analytics-methodology运行时skill已创建并固定加载；Supervisor调度/引用交接及父图双Store注入已完成；Planner数据依赖首版与Composer分析汇总已完成；Plotly 分析看板首版已完成（当前会话最近请求快照）。
+父图analytics已启用；未执行真实模型/API端到端评估。
+完整状态、无风险利率适用范围、样本不足及协方差产物边界见 [Analytics实施规格](analytics-agent.md)。
+
+Planner计划现在检查Analytics的直接数据依赖，并支持可选analytics_parameters；Composer展示分析指标、假设和限制，见Analytics规格步骤7a。
+
+
+### MiniRacer 原生崩溃隔离（2026-11-13）
+用户报告libmini_racer.dylib地址池初始化FATAL并终止Python进程；本机AKShare的新浪解码路径使用MiniRacer。
+尚未证明具体触发条件（并发、重载或运行库状态），不把加锁视为已验证根因修复。
+所有现有stock_zh_a_daily和stock_zh_index_daily调用统一经src.tools._call_sina执行：
+使用当前Python解释器启动独立进程（不使用multiprocessing fork），白名单函数名与JSON参数通过stdin传入，
+返回JSON记录后再按现有数据契约验证。原生进程异常退出转换为Python异常，由既有工具fallback处理；
+设置60秒超时，不向用户透传原始stderr。新解释器生命周期隔离V8，服务不因该子进程原生崩溃退出。
+不修改依赖版本、不禁用工具并行；每次新浪回退增加启动开销。
+单元测试mock进程退出和超时、参数/结果传输，并继续隔离所有网络请求。
+用户原始原生崩溃未稳定复现，本次验证的是进程隔离与故障转换边界。
+
+
+## Planner 输出可靠性改进计划（2026-11-13，已确认/待实现）
+
+先统一Pydantic诊断并通过custom events在执行记录展示每次尝试；再简化LLM输出，
+由代码补齐固定默认值；核实当前ChatTongyi/模型的结构化输出机制后再迁移Planner。
+保留运行时Pydantic和依赖图业务校验，不将方法存在等同严格schema支持。
+问题证据、实施边界与验收见[Planner校验问题识别与改进计划](workflow-evolution.md#planner-校验问题识别与改进计划2026-11-13)。
+
+
+Planner可靠性阶段一首版已实现（2026-11-13）：共享validation_diagnostics格式化字段级错误，
+planner_attempt custom事件交接逐次尝试诊断，Streamlit执行记录展示。输入值预览省略，
+完整原始响应不存储；输出简化、提供方能力核实和结构化迁移仍待实施。
+
+
+Planner后续交付（2026-11-13）：模型schema投影移除固定missing_data，运行时补齐no_fill。
+默认tool_calling通过ChatTongyi.with_structured_output(dict schema)提交计划，仍用Pydantic校验。
+PLANNER_OUTPUT_MODE=json可切回原解析路径；这不是strict JSON Schema。真实3例/模式均首次通过，
+尚无失败率改善证据，详见工作流演进规格阶段二、三交付记录。
+
+
+## Strategy/Risk 专家工具规划（2026-11-13，已确认/待实现）
+
+职责为策略解释、显式情景与用户风险约束；首批建设约束检查和简单组合压力测试，
+盈利数据契约齐备后再加入估值情景。V2再评估组合优化、风险预算、HRP及Black-Litterman。
+采集复用Market Data，数值复用Analytics；当前调度仍返回unsupported。
+详见[Investment Strategy/Risk规格](investment-strategy-agent.md)。
+
+
+Strategy/Risk State设计已确认、待实现（2026-11-13）：独立状态与输入/结果契约，
+父级仅通过适配层交接授权引用与规范TaskResult；可选持仓/用户约束/显式情景与事实分开。
+数值从规范工具产物重建，完整产物与局部消息不进入父图；独立StrategyStore待定。
+详见[专题State设计](investment-strategy-agent.md#state与父子图交接设计2026-11-13已确认待实现)。
+
+
+## Strategy/Risk V1 交付边界（2026-11-13）
+
+新增strategy_state、strategy_artifacts、strategy_tools、stages/strategy、strategy_agent及strategy_handoff。
+StrategyStore在请求执行config中创建，持有工具输入/结果与独立任务scope；不进ParentState，不做持久化。
+适配层按直接依赖重建数据/分析引用，Supervisor为每次策略调用生成独立scope校验输出归属。
+有界ToolNode循环与无工具输出修正；显式约束/完整持仓情景由代码确保调用对应工具，避免模型跳过。
+普通证据解释不强制组合工具或持仓。固定运行时输入注入工具，模型不能改写持仓/约束。
+Composer保留确定性检查/情景结果，UI分析与策略页展示，执行记录新增Strategy/Risk区。
+独立StrategyStore已选用，不再是待定项。历史章节中的待实施/unsupported描述由本节更新。
+实现/验收详见[开发规格](strategy-agent-development.md)。
+
+策略用户需求与能力扩展的产品参考见[常见策略问题与扩展方向](strategy-user-questions-and-expansion.md)；
+架构职责边界保持，候选数据源、估值情景与择时能力不因归档讨论而视为已实现或已定稿。
+
+
+## 报告交付展示层（2026-11-13）
+
+app/report_viewer.py消费已生成final_report，复用validate_report，提供会话内阅读与Markdown/HTML导出。
+新增报告阅读页，节点输出保留；不把正文送Composer、不改报告子图，不增加持久化或API服务。
+长期链接、存储/权限、PDF和部署扩展见[报告交付规格](report-delivery.md)。
+这更新此前正文隐藏的UI状态；Strategy未解决问题继续暂缓。
+
+
+UI当前导航（2026-11-13）：产品层为回答、数据与分析、报告中心；默认收起的开发者调试层含规划调度、
+专家记录与报告生成过程。app/example_queries.py提供六条默认示例、边界问题及上海日期生成；点击不会自动执行。
+原流式更新/请求内快照保留，详见报告交付规格。
+
+
+## src 目录重排（2026-11-14）
+
+按领域分包，纯结构调整，不改任何逻辑：core（llm/datasets/errors/validation_diagnostics）、
+data（AKShare tools）、orchestration（父图/planner/supervisor/composer/契约）、
+specialists/{market_data,analytics,strategy,report}。原 src/stages 拆入 orchestration 与各 specialist。
+TaskError 移至 core/errors.py，使 specialists 不反向依赖 orchestration。各节文件路径已按新结构更新。
+
+
+## 分析与策略能力升级规划（2026-11-14，阶段 1 已实现，待真实数据验收）
+
+用户确认三阶段升级：阶段 1 技术因子/PS/批量采集/收益矩阵/同行 z-score/组合 VaR·CVaR/历史情景重演；
+阶段 2 最小方差与风险平价优化及调仓清单；阶段 3 经 AKShare 接口实测后接入财务、机构持仓与研报评级表。
+专家分工不变，契约与验收见[分析与策略能力升级规格](analysis-strategy-upgrade.md)。
+
+
+## Streamlit 界面改版（2026-11-14）
+
+参照 frontend/ 中的 Figma 导出原型改版现有 Streamlit，不引入独立前端或 HTTP 后端。
+主题在 `.streamlit/config.toml`；静态外观在 `app/ui_shell.py`（自有 `zh-*` 样式类，内部选择器仅用 `st-key-*`）；
+进度面板由 `app/progress.py` 纯函数从真实规划与任务事件推导。原型中的置信度、领先方、已交叉验证、
+超出现有能力的示例与“数据服务正常”均未采用。持久化（历史、报告库、收藏）与 PDF 不在本次范围。

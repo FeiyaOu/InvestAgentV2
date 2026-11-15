@@ -15,7 +15,10 @@ dashscope>=1.20
 pydantic>=2.0
 
 # AKShare — free A-share market data (no API key required)
-akshare>=1.12
+# 钉在 <1.20.46：该版本起 stock_zh_a_hist / stock_zh_a_daily / stock_zh_index_daily 等接口改名
+# （stock_zh_a_hist_em / stock_zh_a_daily_sina / ...），列也可能变化；src/data/tools.py 尚未迁移。
+# 升级前需逐接口核对返回列并更新 tools.py 与测试。
+akshare>=1.20,<1.20.46
 
 # pandas — 显式钉在 2.x：pandas 3 默认使用 pyarrow 字符串后端，
 # akshare 内部 str.replace(r"\u3000", regex=True) 会被 RE2 判为非法转义，

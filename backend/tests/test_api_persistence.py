@@ -123,13 +123,16 @@ def test_partial_report_is_saved_as_draft_and_download_is_labelled(tmp_path):
 
 def test_unfinished_runs_are_failed_on_restart(tmp_path):
     settings = test_settings(tmp_path)
-    graph = ScriptedGraph([((), "updates", {"initialize": {"user_query": "x"}})])
+    graph = ScriptedGraph()
     client = TestClient(create_app(graph=graph, settings=settings, max_workers=1))
     client.__enter__()
     user = AuthedClient(client, "alice@example.com")
-    run_id = user.post("/api/runs", json={"query": "x"}).json()["run_id"]
-    wait_terminal(user, run_id)
-    # Simulate a crash mid-run by rewriting the row as still running before "restarting".
+    # Seed an unfinished run without launching a worker: observing a terminal HTTP
+    # snapshot does not guarantee the worker has committed its final DB write.
+    record = client.app.state.run_manager.store.create(query="x", conversation_id=None, user_id=user.user["id"])
+    run_id = record.run_id
+    event = record.append({"type": "run_started", "scope": "parent", "task_id": None,
+                           "category": None, "payload": {"resumed": False}})
     from sqlmodel import Session
 
     from api.models import Run
@@ -144,6 +147,10 @@ def test_unfinished_runs_are_failed_on_restart(tmp_path):
     client.__enter__()
     try:
         snapshot = client.get(f"/api/runs/{run_id}", headers={"authorization": f"Bearer {user.token}"}).json()
-        assert snapshot["status"] == "failed" and snapshot["error"]["type"] == "service_restarted"
+        assert snapshot["status"] == "failed"
+        assert snapshot["error"]["type"] == "service_restarted"
+        assert snapshot["finished_at"] is not None
+        events = client.get(f"/api/runs/{run_id}/events/list", headers={"authorization": f"Bearer {user.token}"}).json()
+        assert events == [event]
     finally:
         client.__exit__(None, None, None)

@@ -31,6 +31,10 @@
 `waiting_input` 的 run 继续驻留内存等待 resume。进程启动时 `queued/running` 的残留 run 标为
 failed（`service_restarted`），因为同步图无法跨进程续跑；checkpoint 中的 turns 不受影响。
 
+2026-11-16 补充：主动停止新增 cancelling/cancelled；取消终态同样保存 snapshot、已完成报告及事件，
+对话 last_status 使用 cancelled。重启遗留 cancelling 任务归为 cancelled。取消不会删除历史或 checkpoint，
+详见 `api-service.md` 的“主动停止与 SSE 生命周期”。数据库状态列为字符串，无需 schema 迁移。
+
 ## 接口变化
 
 ```text

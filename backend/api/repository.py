@@ -131,11 +131,12 @@ def recent_runs(session: Session, user_id: str, *, limit: int = 50) -> list[Run]
 
 def fail_unfinished_runs(session: Session, message: str) -> int:
     """Startup recovery: runs that were live when the previous process died cannot resume."""
-    rows = session.exec(select(Run).where(Run.status.in_(["queued", "running"]))).all()
+    rows = session.exec(select(Run).where(Run.status.in_(["queued", "running", "cancelling"]))).all()
     for run in rows:
-        run.status = "failed"
+        stopping = run.status == "cancelling"
+        run.status = "cancelled" if stopping else "failed"
         run.finished_at = utcnow()
-        run.error = {"type": "service_restarted", "message": message}
+        run.error = None if stopping else {"type": "service_restarted", "message": message}
         session.add(run)
     return len(rows)
 

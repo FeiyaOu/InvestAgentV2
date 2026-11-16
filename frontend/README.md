@@ -32,10 +32,16 @@ src/
 2. `useRun` 先 `GET /api/runs/:id` 取完整快照，未终止则用 `EventSource` 订阅 `/events?after=event_count`，
    用 `applyEvent` 按 seq 合并（规则与 backend/api/events.py 一致），收到 run_finished / run_waiting 后关闭。
 3. `waiting_input` 时显示澄清卡片，`POST /resume` 后重新订阅。
+   运行、排队或等待补充时可点“停止研究”：`POST /cancel`，显示 cancelling → cancelled。
+   离开页面只清理订阅，后台任务继续；SSE 具名事件和断线退避续订由 `api/runStream.ts` 管理。
 4. 结果页按 `state.plan.tasks` 的 category 渲染：MarketDataPanel、AnalyticsPanel（指标 + 图表来自
    `analysis_snapshots` 的结构化 series）、StrategyPanel（`strategy_series`）、ReportPanel（阶段进度 + 跳转报告中心）。
 
 ## 约定
+
+- 主题变量集中在 `src/theme.css`：低饱和板岩蓝／雾霾蓝为品牌色，冷灰白为基底，暖沙色仅作点缀。
+- 金融颜色独立使用 `--color-up`（红涨）、`--color-down`（绿跌）及风险等级变量；完成状态使用 success 色。
+- ECharts 从 CSS 主题变量读取配色，趋势线、坐标、网格与页面保持一致。
 
 - 图表只画后端结构化产物（AnalysisArtifact.series / 策略 series / 同口径估值表），不从文字猜数字。
 - 不展示规格已否决的内容：置信度百分比（报告维度置信度除外，且注明含义）、领先方、已交叉验证、数据服务正常。

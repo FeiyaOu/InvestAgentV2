@@ -14,6 +14,8 @@ const STATUS: Record<string, string> = {
   waiting_input: "等待补充",
   running: "进行中",
   queued: "排队中",
+  cancelling: "正在停止",
+  cancelled: "已停止",
 };
 
 export function HistoryPage() {

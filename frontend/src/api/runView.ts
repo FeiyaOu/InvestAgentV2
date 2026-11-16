@@ -4,7 +4,7 @@
  */
 import type { ParentState, RunEvent, RunSnapshot, RunStatus, TaskCategory, ClarificationInterrupt } from "./types";
 
-export const TERMINAL: RunStatus[] = ["completed", "failed", "waiting_input"];
+export const TERMINAL: RunStatus[] = ["completed", "failed", "waiting_input", "cancelled"];
 
 export function emptySnapshot(runId: string, conversationId: string, query: string): RunSnapshot {
   return {
@@ -34,6 +34,9 @@ export function applyEvent(snapshot: RunSnapshot, event: RunEvent): RunSnapshot 
   const next: RunSnapshot = { ...snapshot, event_count: event.seq };
   const p = event.payload as Record<string, any>;
   switch (event.type) {
+    case "run_cancelling":
+      next.status = "cancelling";
+      break;
     case "run_started":
       next.status = "running";
       next.started_at = next.started_at ?? event.at;
@@ -46,6 +49,7 @@ export function applyEvent(snapshot: RunSnapshot, event: RunEvent): RunSnapshot 
       next.status = p.status as RunStatus;
       next.finished_at = event.at;
       next.error = p.error ?? null;
+      if (next.status === "cancelled") next.interrupt = null;
       next.elapsed_seconds = p.elapsed_seconds ?? next.elapsed_seconds;
       break;
     case "clarification_required":
@@ -179,6 +183,8 @@ export function runHeadline(snapshot: RunSnapshot): string {
     failed: "未完成",
     needs_clarification: "需要补充信息",
   };
+  if (snapshot.status === "cancelled") return "已停止";
+  if (snapshot.status === "cancelling") return "正在停止";
   if (snapshot.status === "waiting_input") return "等待你的补充";
   if (snapshot.status === "queued" || snapshot.status === "running") return "进行中";
   return labels[key ?? ""] ?? (snapshot.status === "failed" ? "未完成" : "已完成");

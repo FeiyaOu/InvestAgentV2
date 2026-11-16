@@ -82,6 +82,10 @@ export function resumeRun(runId: string, answer: string) {
   return request<RunSnapshot>(`/runs/${runId}/resume`, { method: "POST", body: JSON.stringify({ answer }) });
 }
 
+export function cancelRun(runId: string) {
+  return request<RunSnapshot>(`/runs/${runId}/cancel`, { method: "POST" });
+}
+
 /** EventSource cannot set headers, so the token travels as a query parameter on this endpoint only. */
 export function eventStreamUrl(runId: string, after: number) {
   const token = getToken();

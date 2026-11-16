@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { eventStreamUrl, getRun, resumeRun as resumeRunRequest } from "./client";
-import { TERMINAL, applyEvent } from "./runView";
-import type { RunEvent, RunSnapshot } from "./types";
+import { useCallback, useEffect, useState } from "react";
+import { cancelRun, resumeRun as resumeRunRequest } from "./client";
+import { watchRun } from "./runStream";
+import { TERMINAL } from "./runView";
+import type { RunSnapshot } from "./types";
 
 export interface UseRunResult {
   snapshot: RunSnapshot | null;
@@ -9,6 +10,7 @@ export interface UseRunResult {
   error: string | null;
   elapsed: number;
   resume: (answer: string) => Promise<void>;
+  cancel: () => Promise<void>;
 }
 
 /** Fetch the run snapshot, then follow its SSE stream until it finishes or waits for input. */
@@ -17,47 +19,17 @@ export function useRun(runId: string | undefined): UseRunResult {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
-  const sourceRef = useRef<EventSource | null>(null);
   const [generation, setGeneration] = useState(0);
 
   useEffect(() => {
     if (!runId) return;
-    let cancelled = false;
     setLoading(true);
     setError(null);
-    getRun(runId)
-      .then((initial) => {
-        if (cancelled) return;
-        setSnapshot(initial);
-        setLoading(false);
-        if (TERMINAL.includes(initial.status)) return;
-        const source = new EventSource(eventStreamUrl(runId, initial.event_count));
-        sourceRef.current = source;
-        source.onmessage = (message) => {
-          const event = JSON.parse(message.data) as RunEvent;
-          setSnapshot((current) => (current ? applyEvent(current, event) : current));
-          if (event.type === "run_finished" || event.type === "run_waiting") {
-            source.close();
-            sourceRef.current = null;
-          }
-        };
-        source.onerror = () => {
-          // The server closes the stream at terminal states; a reconnect refreshes the snapshot instead.
-          source.close();
-          sourceRef.current = null;
-          if (!cancelled) getRun(runId).then((fresh) => !cancelled && setSnapshot(fresh)).catch(() => undefined);
-        };
-      })
-      .catch((err: Error) => {
-        if (cancelled) return;
-        setError(err.message);
-        setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-      sourceRef.current?.close();
-      sourceRef.current = null;
-    };
+    setSnapshot(null);
+    return watchRun(runId, {
+      onSnapshot: (fresh) => { setSnapshot(fresh); setLoading(false); setError(null); },
+      onError: (err) => { setError(err.message); setLoading(false); },
+    });
   }, [runId, generation]);
 
   const running = snapshot ? !TERMINAL.includes(snapshot.status) : false;
@@ -76,6 +48,12 @@ export function useRun(runId: string | undefined): UseRunResult {
     [runId],
   );
 
+  const cancel = useCallback(async () => {
+    if (!runId) return;
+    await cancelRun(runId);
+    setGeneration((value) => value + 1);
+  }, [runId]);
+
   const elapsed = (() => {
     if (!snapshot) return 0;
     if (snapshot.elapsed_seconds != null && TERMINAL.includes(snapshot.status)) return snapshot.elapsed_seconds;
@@ -84,5 +62,5 @@ export function useRun(runId: string | undefined): UseRunResult {
     return Math.max(0, Math.round((Date.now() - new Date(snapshot.started_at).getTime()) / 1000));
   })();
 
-  return { snapshot, loading, error, elapsed, resume };
+  return { snapshot, loading, error, elapsed, resume, cancel };
 }

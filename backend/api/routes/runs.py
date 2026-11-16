@@ -53,6 +53,11 @@ def resume_run(body: ResumeRunRequest, request: Request, record: RunRecord = Dep
     return record.snapshot()
 
 
+@router.post("/{run_id}/cancel", status_code=202)
+def cancel_run(request: Request, record: RunRecord = Depends(owned_run)):
+    return _manager(request).cancel(record).snapshot()
+
+
 def _sse(event: dict) -> str:
     return f"id: {event['seq']}\nevent: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
 

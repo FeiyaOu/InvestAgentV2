@@ -7,7 +7,7 @@ still serve GET /runs/{id} and replay its events.
 import json
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import uuid4
@@ -15,10 +15,11 @@ from uuid import uuid4
 from langgraph.types import Command
 
 from api import repository
+from api.cancellation import CancellationGuard, RunCancelled
 from api.db import session_scope
 from api.events import RunView, normalize, terminal_status
 
-TERMINAL = {"completed", "failed", "waiting_input"}
+TERMINAL = {"completed", "failed", "waiting_input", "cancelled"}
 RESTART_MESSAGE = "服务重启，运行中断；已保留已产生的事件，请重新提问。"
 
 
@@ -44,10 +45,13 @@ class RunRecord:
     error: dict | None = None
     events: list[dict] = field(default_factory=list)
     view: RunView = field(default_factory=RunView)
-    lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
     store: "RunStore | None" = field(default=None, repr=False)
     _started_monotonic: float | None = field(default=None, repr=False)
     _elapsed_final: float | None = field(default=None, repr=False)
+    cancel_requested: threading.Event = field(default_factory=threading.Event, repr=False)
+    lifecycle_lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
+    future: Future | None = field(default=None, repr=False)
 
     def append(self, event: dict) -> dict:
         with self.lock:
@@ -130,6 +134,11 @@ class RunStore:
             events = repository.load_events(session, run_id)
         return _record_from_row(data, events)
 
+    def activate(self, record: RunRecord) -> None:
+        """A resumed checkpoint loaded after restart must share one live cancellation token."""
+        with self._lock:
+            self._live[record.run_id] = record
+
     def persist_event(self, run_id: str, event: dict) -> None:
         with session_scope(self.engine) as session:
             repository.append_event(session, run_id, event)
@@ -142,14 +151,15 @@ class RunStore:
                       "snapshot": jsonable(record.view.snapshot()) if terminal else None}
         with session_scope(self.engine) as session:
             repository.update_run(session, record.run_id, **fields)
-            if record.status in {"completed", "failed"}:
+            if record.status in {"completed", "failed", "cancelled"}:
                 repository.save_reports(session, run_id=record.run_id, conversation_id=record.conversation_id,
                                         user_id=record.user_id, state=fields["snapshot"]["state"])
-                status = record.view.state.get("supervisor_status") or record.view.state.get("planning_status") or record.status
+                status = ("cancelled" if record.status == "cancelled" else
+                          record.view.state.get("supervisor_status") or record.view.state.get("planning_status") or record.status)
                 repository.touch_conversation(session, record.conversation_id, status=status, counted=True)
             elif record.status == "waiting_input":
                 repository.touch_conversation(session, record.conversation_id, status="waiting_input", counted=False)
-        if record.status in {"completed", "failed"}:
+        if record.status in {"completed", "failed", "cancelled"}:
             with self._lock:
                 self._live.pop(record.run_id, None)
             record.store = None
@@ -176,20 +186,42 @@ class RunManager:
         record = self.store.create(query=query.strip(), conversation_id=conversation_id, user_id=user_id)
         record.append({"type": "run_queued", "scope": "parent", "task_id": None, "category": None,
                        "payload": {"query": record.query, "conversation_id": record.conversation_id}})
-        self._pool.submit(self._execute, record, {"user_query": record.query})
+        with record.lifecycle_lock:
+            record.future = self._pool.submit(self._execute, record, {"user_query": record.query})
         return record
 
     def resume(self, record: RunRecord, answer: str) -> RunRecord:
+        with record.lifecycle_lock:
+            return self._resume(record, answer)
+
+    def _resume(self, record: RunRecord, answer: str) -> RunRecord:
         with record.lock:
             if record.status != "waiting_input":
                 raise ValueError("run is not waiting for input")
             record.status = "queued"
             record.view.interrupt = None
             record.store = record.store or self.store
+        self.store.activate(record)
         record.append({"type": "clarification_answered", "scope": "parent", "task_id": None, "category": None,
                        "payload": {"answer": answer}})
         self.store.persist_status(record)
-        self._pool.submit(self._execute, record, Command(resume=answer))
+        record.future = self._pool.submit(self._execute, record, Command(resume=answer))
+        return record
+
+    def cancel(self, record: RunRecord) -> RunRecord:
+        with record.lifecycle_lock:
+            if record.status in {"completed", "failed", "cancelled", "cancelling"}:
+                return record
+            record.cancel_requested.set()
+            waiting = record.status == "waiting_input"
+            queued = record.future is not None and record.future.cancel()
+            with record.lock:
+                record.status = "cancelling"
+            record.append({"type": "run_cancelling", "scope": "parent", "task_id": None, "category": None,
+                           "payload": {"status": "cancelling"}})
+            self.store.persist_status(record)
+            if waiting or queued:
+                self._finish(record, "cancelled")
         return record
 
     def shutdown(self):
@@ -197,34 +229,61 @@ class RunManager:
 
     def _config(self, record: RunRecord) -> dict:
         config = dict(self._config_factory())
+        callbacks = config.get("callbacks")
+        guard = CancellationGuard(record.cancel_requested)
+        if callbacks is None or isinstance(callbacks, (list, tuple)):
+            config["callbacks"] = [*(callbacks or []), guard]
+        else:
+            config["callbacks"] = callbacks.copy()
+            config["callbacks"].add_handler(guard, inherit=True)
         config["configurable"] = {**config.get("configurable", {}), "thread_id": record.conversation_id}
         return config
 
     def _execute(self, record: RunRecord, payload):
-        with record.lock:
-            record.status, record.started_at = "running", _now()
-            record._started_monotonic = record._started_monotonic or time.monotonic()
-            record.finished_at, record.error = None, None
-        record.append({"type": "run_started", "scope": "parent", "task_id": None, "category": None,
-                       "payload": {"resumed": isinstance(payload, Command)}})
-        self.store.persist_status(record)
+        with record.lifecycle_lock:
+            if record.cancel_requested.is_set():
+                self._finish(record, "cancelled")
+                return
+            with record.lock:
+                record.status, record.started_at = "running", _now()
+                record._started_monotonic = record._started_monotonic or time.monotonic()
+                record.finished_at, record.error = None, None
+            record.append({"type": "run_started", "scope": "parent", "task_id": None, "category": None,
+                           "payload": {"resumed": isinstance(payload, Command)}})
+            self.store.persist_status(record)
         try:
             for namespace, mode, update in self.graph.stream(payload, config=self._config(record), subgraphs=True,
                                                               stream_mode=["updates", "custom"]):
                 for event in normalize(record.view, namespace, mode, update):
                     record.append(event)
+                if record.cancel_requested.is_set():
+                    raise RunCancelled()
             status = terminal_status(record.view)
+        except RunCancelled:
+            status = "cancelled"
         except Exception as exc:  # noqa: BLE001 - the run boundary must never leak exceptions into the pool.
             status = "failed"
             with record.lock:
                 record.error = {"type": "execution_error", "message": "运行异常，已保留本轮可用事件，请重试。",
                                 "detail": type(exc).__name__}
-        with record.lock:
-            record.status = status
-            if status != "waiting_input":
-                record.finished_at = _now()
-                record._elapsed_final = time.monotonic() - record._started_monotonic
-        kind = "run_waiting" if status == "waiting_input" else "run_finished"
-        record.append({"type": kind, "scope": "parent", "task_id": None, "category": None,
-                       "payload": {"status": status, "error": record.error, "elapsed_seconds": record.elapsed()}})
-        self.store.persist_status(record)
+        self._finish(record, status)
+
+    def _finish(self, record: RunRecord, status: str):
+        with record.lifecycle_lock:
+            if record.status in {"completed", "failed", "cancelled"}:
+                return
+            status = "cancelled" if record.cancel_requested.is_set() else status
+            with record.lock:
+                record.status = status
+                if status == "cancelled":
+                    record.error = None
+                    record.view.interrupt = None
+                if status != "waiting_input":
+                    record.finished_at = _now()
+                    record._elapsed_final = (time.monotonic() - record._started_monotonic
+                                             if record._started_monotonic is not None else 0)
+                # SSE must not see a terminal status before its final event exists.
+                kind = "run_waiting" if status == "waiting_input" else "run_finished"
+                record.append({"type": kind, "scope": "parent", "task_id": None, "category": None,
+                               "payload": {"status": status, "error": record.error, "elapsed_seconds": record.elapsed()}})
+            self.store.persist_status(record)

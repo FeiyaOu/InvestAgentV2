@@ -23,10 +23,24 @@ GET  /api/runs/{id}                   快照：status、state、report_progress�
 GET  /api/runs/{id}/events?after=N    SSE：先回放 seq>N 的事件，再实时跟随，直到 completed/failed/waiting_input
 GET  /api/runs/{id}/events/list?after=N  同一事件序列的 JSON 数组（调试/非流式客户端）
 POST /api/runs/{id}/resume            {answer} → 202；仅 waiting_input 可恢复，否则 409
+POST /api/runs/{id}/cancel            → 202 快照；仅任务所属用户可操作，重复取消幂等
 GET  /api/conversations/{id}          {conversation_id, turns, runs}
 ```
 
 run 状态机：`queued → running → completed | failed | waiting_input`；`waiting_input` 经 resume 回到 `queued`。
+
+### 主动停止与 SSE 生命周期（2026-11-16）
+
+- 离开页面、退出登录、关闭浏览器只关闭 SSE 订阅，不取消后台研究。
+- 显式点击“停止研究”才调用 cancel。queued 可取消队列 Future，waiting_input 可直接结束；
+  running 先进入 cancelling，在已发出的同步请求返回后进入 cancelled。completed/failed/cancelled 不再改变。
+- 取消标记经运行时回调传给所有子图，在节点、模型和工具开始时检查；取消控制流不被普通
+  provider 异常 fallback/retry 吞掉。不强杀 Python 线程，不承诺中止已经到达供应商的请求或退回其费用。
+- cancelled 是独立终态，停止计时、清除澄清卡片、禁止 resume，保存已产生的事件和结果；
+  最终事件仍使用 run_finished，payload.status=cancelled。run_cancelling 表示停止请求已接收。
+- SSE 前端用 addEventListener 订阅具名事件。网络异常时以 1–15 秒退避，重新取快照，
+  从最新 event_count 续订；卸载页面清理连接和重试定时器，不调用 cancel。
+- 服务重启时，残留 cancelling 任务归为 cancelled；queued/running 仍按 service_restarted 失败处理。
 
 ## 事件
 

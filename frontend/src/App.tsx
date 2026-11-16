@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { createRun, listRuns } from "./api/client";
 import { Icon, type IconName } from "./components/Icon";
 import { LoginPage } from "./features/auth/LoginPage";
@@ -10,6 +10,7 @@ import { ReportCenter, ReportReader } from "./features/reports/ReportCenter";
 import { RunPage } from "./features/research/RunPage";
 import { useAuth } from "./state/auth";
 import { useSession } from "./state/session";
+import { hideRecent, readHiddenRecent } from "./state/recentVisibility";
 
 const NAV: { name: string; to: string; icon: IconName }[] = [
   { name: "当前对话", to: "/", icon: "chat" },
@@ -19,25 +20,38 @@ const NAV: { name: string; to: string; icon: IconName }[] = [
 
 export default function App() {
   const { user, ready, logout } = useAuth();
+  const location = useLocation();
   if (!ready) return null;
-  if (!user) return <LoginPage />;
-  return <Workbench userEmail={user.email} displayName={user.display_name} onLogout={logout} />;
+  if (location.pathname === "/login") {
+    if (user && !user.is_guest) return <Navigate to="/" replace />;
+    return <LoginPage />;
+  }
+  // A reopened guest page has no credentials for the old run/report URL.
+  if (!user && location.pathname !== "/") return <Navigate to="/" replace />;
+  return <Workbench key={user && !user.is_guest ? user.id : "guest"} userEmail={user?.email ?? ""}
+    displayName={user?.display_name ?? "访客"} onLogout={logout} />;
 }
 
 function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; displayName: string; onLogout: () => void }) {
+  const { user, ensureGuest } = useAuth();
+  const guest = !user || Boolean(user.is_guest);
   const { conversationId, setConversationId, newConversation } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const recent = useQuery({ queryKey: ["runs", "recent"], queryFn: () => listRuns(5), staleTime: 10_000 });
+  const recentOwner = guest ? null : user!.id;
+  const [hiddenRecent, setHiddenRecent] = useState(() => readHiddenRecent(recentOwner));
+  const recent = useQuery({ queryKey: ["runs", "recent"], queryFn: () => listRuns(50), staleTime: 10_000, enabled: Boolean(user) });
+  const visibleRecent = (recent.data ?? []).filter((run) => !hiddenRecent.includes(run.run_id)).slice(0, 5);
 
   const submit = async (query: string) => {
     if (submitting) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
+      if (guest) await ensureGuest();
       const created = await createRun(query, conversationId);
       setConversationId(created.conversation_id);
       void queryClient.invalidateQueries({ queryKey: ["runs"] });
@@ -87,23 +101,31 @@ function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; di
 
         <div className="recent">
           <div className="section-label">最近研究</div>
-          {recent.data?.length === 0 && <p className="zh-muted zh-recent-empty">还没有研究记录</p>}
-          {recent.data?.map((run) => (
-            <button key={run.run_id} onClick={() => navigate(`/runs/${run.run_id}`)} title={run.query}>
+          {recent.isSuccess && visibleRecent.length === 0 && <p className="zh-muted zh-recent-empty">暂无最近研究</p>}
+          {visibleRecent.map((run) => (
+            <div className="zh-recent-row" key={run.run_id}>
+            <button className="zh-recent-open" onClick={() => navigate(`/runs/${run.run_id}`)} title={run.query}>
               <span>{run.query}</span>
               <small>{new Date(run.created_at).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}</small>
             </button>
+            <button type="button" className="zh-recent-hide" aria-label={`从最近研究移除：${run.query}`}
+              title="从最近研究移除，保留历史和报告"
+              onClick={() => setHiddenRecent((ids) => hideRecent(ids, run.run_id, recentOwner))}>
+              <Icon name="trash" size={14} />
+            </button>
+            </div>
           ))}
         </div>
 
         <div className="sidebar-bottom">
-          <button className="user-card" title={userEmail} onClick={onLogout}>
+          <button className="user-card" title={guest ? "登录后按账号保存历史和报告" : userEmail}
+            onClick={() => { if (guest) navigate("/login"); else { onLogout(); navigate("/"); } }}>
             <div className="avatar">{(displayName || userEmail).slice(0, 1).toUpperCase()}</div>
             <span>
-              <b>{displayName || userEmail}</b>
-              <small>点击退出登录</small>
+              <b>{guest ? "登录 / 注册" : displayName || userEmail}</b>
+              <small>{guest ? "访客内容仅当前页面保留" : "点击退出登录"}</small>
             </span>
-            <Icon name="close" size={16} />
+            <Icon name={guest ? "user" : "close"} size={16} />
           </button>
         </div>
       </aside>
@@ -113,7 +135,7 @@ function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; di
           <div className="context-pill" title={conversationId ?? ""}>
             {conversationId ? `当前对话 ${conversationId.slice(-6)}` : "新对话"}
           </div>
-          <div className="context-pill">同一对话内最近 3 轮进入上下文</div>
+          <div className="context-pill">{guest ? "访客模式 · 关闭或刷新后清空" : "同一对话内最近 3 轮进入上下文"}</div>
         </header>
         {submitError && <div className="zh-notice error zh-topnotice">提交失败：{submitError}</div>}
         <Routes>

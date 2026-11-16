@@ -56,6 +56,7 @@ scp 最新 `docker-compose.yml` 到 ECS → 改写 `.env` 中的镜像 tag → `
 
 部署成功后打开 `http://<ECS IP>:<WEB_PORT>`，注册你的账号，然后在 ECS 上把 `.env` 的
 `INVEST_ALLOW_REGISTRATION` 改为 `false` 并执行 `docker compose up -d api`。
+这只关闭新账号注册；首页和访客研究仍可使用，访客数据不进入账号数据库。
 
 ## 四、日常运维
 

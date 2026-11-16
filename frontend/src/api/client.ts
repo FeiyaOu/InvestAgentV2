@@ -31,10 +31,10 @@ async function request<T>(path: string, init?: RequestInit, { auth = true }: { a
     } catch {
       /* non-JSON error body */
     }
-    if (response.status === 401 && auth) onUnauthorized();
+    if (response.status === 401 && auth && token === getToken()) onUnauthorized();
     throw new ApiError(response.status, detail);
   }
-  return (await response.json()) as T;
+  return response.status === 204 ? undefined as T : (await response.json()) as T;
 }
 
 // ---- auth ----
@@ -42,7 +42,18 @@ async function request<T>(path: string, init?: RequestInit, { auth = true }: { a
 export interface TokenResponse {
   access_token: string;
   token_type: string;
-  user: { id: string; email: string; display_name: string };
+  user: { id: string; email: string; display_name: string; is_guest?: boolean };
+}
+
+export function createGuest() {
+  return request<TokenResponse>("/auth/guest", { method: "POST" }, { auth: false });
+}
+
+export async function endGuest(token: string) {
+  try {
+    await fetch(`${BASE}/auth/guest/end`, { method: "POST", keepalive: true,
+      headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+  } catch { /* Server idle expiry handles browsers that cannot deliver pagehide. */ }
 }
 
 export function register(email: string, password: string, display_name: string) {
@@ -74,12 +85,20 @@ export function getRun(runId: string) {
   return request<RunSnapshot>(`/runs/${runId}`);
 }
 
+export const deleteRun = (runId: string) => request<void>(`/runs/${runId}`, { method: "DELETE" });
+export const deleteConversation = (id: string) => request<void>(`/conversations/${id}`, { method: "DELETE" });
+export const deleteReport = (id: string) => request<void>(`/reports/${id}`, { method: "DELETE" });
+
 export function listEvents(runId: string, after = 0) {
   return request<RunEvent[]>(`/runs/${runId}/events/list?after=${after}`);
 }
 
 export function resumeRun(runId: string, answer: string) {
   return request<RunSnapshot>(`/runs/${runId}/resume`, { method: "POST", body: JSON.stringify({ answer }) });
+}
+
+export function cancelRun(runId: string) {
+  return request<RunSnapshot>(`/runs/${runId}/cancel`, { method: "POST" });
 }
 
 /** EventSource cannot set headers, so the token travels as a query parameter on this endpoint only. */

@@ -1,12 +1,12 @@
 """Email + password accounts with JWT sessions."""
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import EmailStr, Field
 
 from api import repository
 from api.db import session_scope
 from api.deps import CurrentUser, current_user
 from api.schemas import StrictModel
-from api.security import create_token, hash_password, verify_password
+from api.security import create_token, decode_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -26,6 +26,7 @@ class UserOut(StrictModel):
     id: str
     email: str
     display_name: str
+    is_guest: bool = False
 
 
 class TokenOut(StrictModel):
@@ -63,4 +64,28 @@ def login(body: LoginRequest, request: Request):
 
 @router.get("/me", response_model=UserOut)
 def me(user: CurrentUser = Depends(current_user)):
-    return UserOut(id=user.id, email=user.email, display_name=user.display_name)
+    return UserOut(id=user.id, email=user.email, display_name=user.display_name, is_guest=user.is_guest)
+
+
+@router.post('/guest', response_model=TokenOut, status_code=201)
+def guest(request: Request):
+    try:
+        workspace = request.app.state.guest_sessions.create()
+    except ValueError as exc:
+        raise HTTPException(status_code=429, detail=str(exc)) from exc
+    token = create_token(workspace.id, request.app.state.settings.jwt_secret, ttl_hours=12)
+    return TokenOut(access_token=token, user=UserOut(id=workspace.id, email='', display_name='访客', is_guest=True))
+
+
+class EndGuestRequest(StrictModel):
+    token: str = Field(min_length=1, max_length=4096)
+
+
+@router.post('/guest/end', status_code=204)
+def end_guest(body: EndGuestRequest, request: Request):
+    ident = decode_token(body.token, request.app.state.settings.jwt_secret)
+    if ident and not ident.startswith('guest_'):
+        raise HTTPException(status_code=403, detail='此操作仅用于访客会话。')
+    if ident:
+        request.app.state.guest_sessions.close(ident)
+    return Response(status_code=204)

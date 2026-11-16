@@ -40,7 +40,7 @@ export function HomeView({ onRun, busy, initialQuery }: { onRun: (query: string)
     <div className="content">
       <section className="hero">
         <div className="eyebrow">
-          <span></span> AI 驱动的投研工作台
+          <span></span> 您的智能投研工作台
         </div>
         <h1>{greeting}，想研究什么？</h1>
         <p>查询行情、比较公司、洞察历史表现与风险，或生成一份完整的行业研究报告。</p>
@@ -99,10 +99,8 @@ export function HomeView({ onRun, busy, initialQuery }: { onRun: (query: string)
       <section className="capabilities">
         <div className="section-heading">
           <div>
-            <span>研究能力</span>
             <h2>从数据到结论，一站完成</h2>
           </div>
-          <p>回答和图表将在结果页呈现，完整报告可前往「报告中心」阅读与下载。</p>
         </div>
         <div className="ability-grid">
           {abilities.map((item) => (

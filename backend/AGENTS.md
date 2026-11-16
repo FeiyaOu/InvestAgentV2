@@ -21,7 +21,7 @@
 | `spec/analysis-strategy-upgrade.md` | 分析与策略能力升级（V2 阶段 1–3）|
 | `spec/workflow-evolution.md` | 工作流演进与历次决策记录（进展常比主规格更新）|
 | `src/agent.py` | 公共门面（调用 orchestration/parent_graph.py）|
-| `src/orchestration/parent_graph.py` | 父图接线（initialize/planner/clarify/supervisor/composer/record_turn）；planner / supervisor / composer / task_contracts 同目录 |
+| `src/orchestration/parent_graph.py` | 父图接线（initialize/planner/clarify/supervisor/composer/record_turn/compact_history）；planner / supervisor / composer / task_contracts 同目录 |
 | `spec/conversation-memory.md` | V4 多轮会话、turns reducer 与 interrupt 澄清设计 |
 | `spec/api-service.md` | V4 FastAPI 服务层：runs/SSE/resume 接口与事件归并规则 |
 | `spec/persistence-and-accounts.md` | V4 业务表、JWT 账号、归属校验、报告库与重启恢复 |
@@ -69,5 +69,5 @@ python linters/check_agent_structure.py       # 结构 lint 检查
 - 依赖方向：`core / data ← specialists ← orchestration ← agent.py ← services ← api / app`；api 与 app 互不依赖；specialists 不 import orchestration
 - AKShare 只在 `src/data/tools.py` 与离线刷新脚本 `scripts/refresh_security_directory.py` 中调用，节点模块不直接调用 AKShare
 - 证券代码→简称核对只读仓库快照 `src/data/a_share_directory.json`，请求路径不联网拉代码表；需要时运行刷新脚本更新
-- LLM 调用只在节点模块中发生：`orchestration/planner.py`、`composer.py`、`specialists/*/nodes.py`、`specialists/report/stages/`；`agent.py` 只负责编排
+- LLM 调用只在节点模块中发生：`orchestration/planner.py`、`composer.py`、`history.py`、`specialists/*/nodes.py`、`specialists/report/stages/`；`agent.py` 只负责编排
 - 禁止反向依赖（`validator` 不能 import `perception`）

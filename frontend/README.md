@@ -28,17 +28,32 @@ src/
 
 ## 数据流
 
+首页默认公开，可用访客模式开展研究。访客身份和内容仅保留于当前页面内存，关闭或刷新后清空；
+点击侧栏“登录 / 注册”进入账号模式。账号历史和报告持久保存，访客内容不自动转存。
+身份切换时清空查询缓存，当前对话按账号隔离保存；访客对话不写浏览器存储。
+
+侧栏删除按钮只隐藏“最近研究”入口；研究记录和报告中心的删除按钮会先确认再调用 DELETE API。
+删除单次研究连同事件和关联报告，但保留对话记忆；删除整个对话才清除 checkpoint。
+未结束的研究须先停止。轮次列表使用服务端返回的 run_id，删除按钮独立于导航链接。
+
 1. 首页提交 → `POST /api/runs` → 记入 session → 跳转 `/runs/:runId`。
 2. `useRun` 先 `GET /api/runs/:id` 取完整快照，未终止则用 `EventSource` 订阅 `/events?after=event_count`，
    用 `applyEvent` 按 seq 合并（规则与 backend/api/events.py 一致），收到 run_finished / run_waiting 后关闭。
 3. `waiting_input` 时显示澄清卡片，`POST /resume` 后重新订阅。
+   运行、排队或等待补充时可点“停止研究”：`POST /cancel`，显示 cancelling → cancelled。
+   离开页面只清理订阅，后台任务继续；SSE 具名事件和断线退避续订由 `api/runStream.ts` 管理。
 4. 结果页按 `state.plan.tasks` 的 category 渲染：MarketDataPanel、AnalyticsPanel（指标 + 图表来自
    `analysis_snapshots` 的结构化 series）、StrategyPanel（`strategy_series`）、ReportPanel（阶段进度 + 跳转报告中心）。
 
 ## 约定
 
+- 主题变量集中在 `src/theme.css`：低饱和板岩蓝／雾霾蓝为品牌色，冷灰白为基底，暖沙色仅作点缀。
+- 金融颜色独立使用 `--color-up`（红涨）、`--color-down`（绿跌）及风险等级变量；完成状态使用 success 色。
+- ECharts 从 CSS 主题变量读取配色，趋势线、坐标、网格与页面保持一致。
+
 - 图表只画后端结构化产物（AnalysisArtifact.series / 策略 series / 同口径估值表），不从文字猜数字。
 - 不展示规格已否决的内容：置信度百分比（报告维度置信度除外，且注明含义）、领先方、已交叉验证、数据服务正常。
 - 模型文本经 react-markdown 渲染，`skipHtml`，仅 http(s) 链接可点击。
 - 新增样式使用 `zh-*` 前缀追加在 index.css 末尾，原型样式类保持可复用。
-- 所有列表来自服务端业务表；浏览器只保存 JWT 与当前对话 id。SSE 以 `?token=` 携带 JWT（EventSource 不能设请求头）。
+- 所有列表按当前身份读取；账号模式在浏览器保存 JWT 与按用户区分的当前对话 id，访客模式仅用页面内存。
+  SSE 以 `?token=` 携带 JWT（EventSource 不能设请求头）。

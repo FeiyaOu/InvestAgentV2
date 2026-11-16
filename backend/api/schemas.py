@@ -34,6 +34,7 @@ class RunEvent(StrictModel):
 
 
 class ConversationTurn(StrictModel):
+    run_id: str
     model_config = ConfigDict(extra="allow")
     query: str
     response_preview: str

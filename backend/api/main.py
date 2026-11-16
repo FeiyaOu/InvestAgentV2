@@ -1,10 +1,12 @@
 """FastAPI application factory. `uvicorn api.main:app --reload` for development."""
-from contextlib import asynccontextmanager
+import asyncio
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.db import init_db, make_engine, open_checkpointer
+from api.guests import GuestSessions
 from api.routes import auth, conversations, reports, runs
 from api.runs import RunManager, RunStore
 from api.settings import Settings, load_settings
@@ -41,9 +43,29 @@ def create_app(*, graph=None, settings: Settings | None = None, max_workers: int
         store.recover()
         app.state.run_manager = RunManager(runtime_graph, store, max_workers=max_workers or settings.max_concurrent_runs,
                                            config_factory=_langfuse_config)
+        def guest_graph():
+            if graph is not None:
+                return graph
+            from langgraph.checkpoint.memory import InMemorySaver
+
+            from src.agent import create_invest_agent
+            return create_invest_agent(checkpointer=InMemorySaver())
+
+        app.state.guest_sessions = GuestSessions(guest_graph, app.state.run_manager._pool)
+
+        async def reap_guests():
+            while True:
+                await asyncio.sleep(60)
+                app.state.guest_sessions.reap()
+
+        cleanup = asyncio.create_task(reap_guests())
         try:
             yield
         finally:
+            cleanup.cancel()
+            with suppress(asyncio.CancelledError):
+                await cleanup
+            app.state.guest_sessions.shutdown()
             app.state.run_manager.shutdown()
             if close_checkpointer is not None:
                 close_checkpointer()

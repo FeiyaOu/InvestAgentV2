@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import { Icon } from "../../components/Icon";
 import { useAuth } from "../../state/auth";
 
@@ -43,7 +44,6 @@ export function LoginPage() {
           <span className="beta">BETA</span>
         </div>
         <h1>{mode === "login" ? "登录工作区" : "创建账号"}</h1>
-        <p className="zh-muted">研究记录、对话与报告按账号保存。</p>
         <label>
           邮箱
           <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
@@ -70,6 +70,7 @@ export function LoginPage() {
         <button type="button" className="zh-auth-switch" onClick={() => setMode(mode === "login" ? "register" : "login")}>
           {mode === "login" ? "还没有账号？注册" : "已有账号？登录"}
         </button>
+        <Link className="zh-auth-switch" to="/">返回首页，以访客身份继续</Link>
       </form>
     </div>
   );

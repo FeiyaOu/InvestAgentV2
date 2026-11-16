@@ -88,3 +88,15 @@ describe("buildSteps", () => {
     expect(buildSteps(retrying)[0].detail).toContain("第 2 次规划");
   });
 });
+
+it("shows cancellation distinctly and clears a stale clarification when stopped", () => {
+  seq = 0;
+  let s = emptySnapshot("r", "c", "q");
+  s = applyEvent(s, ev("clarification_required", { type: "clarification", questions: ["哪只股票"], round: 1, max_rounds: 2 }));
+  s = applyEvent(s, ev("run_cancelling", {}));
+  expect(runHeadline(s)).toBe("正在停止");
+  s = applyEvent(s, ev("run_finished", { status: "cancelled", elapsed_seconds: 4 }));
+  expect(runHeadline(s)).toBe("已停止");
+  expect(s.interrupt).toBeNull();
+  expect(s.error).toBeNull();
+});

@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useRun } from "../../api/useRun";
+import { canDeleteRun, DELETE_RUN_MESSAGE, useRecordDeletion } from "../../api/useRecordDeletion";
 import { CATEGORY_LABELS, TERMINAL, buildSteps, evidenceCount, runHeadline, type ProgressStep } from "../../api/runView";
 import type { RunSnapshot, TaskCategory } from "../../api/types";
 import { Icon } from "../../components/Icon";
+import { DeleteButton } from "../../components/DeleteButton";
 import { Markdown } from "../../components/Markdown";
 import { Notice, SectionTitle } from "../../components/ResultPrimitives";
 import { AnalyticsPanel } from "./panels/AnalyticsPanel";
@@ -36,17 +38,18 @@ function ProgressPanel({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
         <span></span>
         <Icon name="spark" size={23} />
       </div>
-      <h2>{snapshot.status === "queued" ? "排队等待执行" : "正在进行深度研究"}</h2>
+      <h2>{snapshot.status === "cancelling" ? "正在停止研究" : snapshot.status === "queued" ? "排队等待执行" : "正在进行深度研究"}</h2>
       <p>
         已用时 {elapsed} 秒{tasks.length ? ` · 已完成 ${finished}/${tasks.length} 个任务` : ""}
       </p>
+      {snapshot.status === "cancelling" && <p className="zh-muted">等待已发出的请求返回，之后不再执行后续步骤。</p>}
       <div className="research-steps">
         {steps.map((step, index) => (
           <div className={`research-step ${step.state}`} key={`${step.label}-${index}`}>
             <span>{step.state === "active" ? <i></i> : index + 1}</span>
             <b>{step.label}</b>
             <small className="zh-step-detail">{step.detail}</small>
-            <small>{STATE_TEXT[step.state]}</small>
+            <small className="zh-step-status">{STATE_TEXT[step.state]}</small>
           </div>
         ))}
       </div>
@@ -133,6 +136,7 @@ export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
       </div>
 
       {snapshot.error && <Notice tone="error">{snapshot.error.message}</Notice>}
+      {snapshot.status === "cancelled" && <Notice>研究已停止，已产生的结果保留在下方。</Notice>}
       {state.planning_error && <Notice tone="error">[{state.planning_error.type}] {state.planning_error.message}</Notice>}
       {state.supervisor_error && <Notice tone="error">[{state.supervisor_error.type}] {state.supervisor_error.message}</Notice>}
       {state.composition_error && <Notice tone="warn">{state.composition_error.message}</Notice>}
@@ -153,6 +157,9 @@ export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
             <SectionTitle index={section} title={title} subtitle={subtitle} aside={`${tasks.length} 个任务`} />
             {tasks.map((task) => {
               const record = results[task.task_id];
+              if (!record && snapshot.status === "cancelled") {
+                return <article className="zh-task" key={task.task_id}><b>{task.question}</b><span className="zh-badge gray">已停止</span></article>;
+              }
               if (category === "report") {
                 return (
                   <ReportPanel
@@ -202,8 +209,12 @@ export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
 export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string) => void; submitting: boolean }) {
   const { runId } = useParams();
   const navigate = useNavigate();
-  const { snapshot, loading, error, elapsed, resume } = useRun(runId);
+  const { snapshot, loading, error, elapsed, resume, cancel } = useRun(runId);
   const [followUp, setFollowUp] = useState("");
+  const [stopping, setStopping] = useState(false);
+  const [stopError, setStopError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { removeRun } = useRecordDeletion();
 
   if (error) {
     return (
@@ -248,7 +259,26 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
             <span>你的问题</span>
             <h1>{snapshot.query}</h1>
           </div>
+          <div className="zh-run-actions">
+          {(running || waiting) && (
+            <button className="zh-stop-button" disabled={stopping || snapshot.status === "cancelling"}
+              onClick={async () => {
+                setStopping(true);
+                setStopError(null);
+                try { await cancel(); }
+                catch (err) { setStopError(err instanceof Error ? err.message : String(err)); }
+                finally { setStopping(false); }
+              }}>
+              {stopping || snapshot.status === "cancelling" ? "正在停止…" : "停止研究"}
+            </button>
+          )}
+          <DeleteButton label="删除这次研究" message={DELETE_RUN_MESSAGE}
+            disabled={!canDeleteRun(snapshot.status)} onError={setDeleteError}
+            onDelete={async () => { setDeleteError(null); await removeRun(snapshot.run_id); navigate("/"); }} />
+          </div>
         </div>
+        {stopError && <Notice tone="error">停止失败：{stopError}</Notice>}
+        {deleteError && <Notice tone="error">删除失败：{deleteError}</Notice>}
         {running && <ProgressPanel snapshot={snapshot} elapsed={elapsed} />}
         {waiting && <ClarificationCard snapshot={snapshot} onResume={resume} />}
         {(showAnswer || partialResults) && <Answer snapshot={snapshot} elapsed={elapsed} />}

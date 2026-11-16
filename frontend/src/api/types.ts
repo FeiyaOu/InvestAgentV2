@@ -2,7 +2,7 @@
 
 export type TaskCategory = "market_data" | "analytics" | "investment_strategy" | "report";
 export type TaskStatus = "completed" | "partial" | "failed" | "blocked" | "unsupported";
-export type RunStatus = "queued" | "running" | "completed" | "failed" | "waiting_input";
+export type RunStatus = "queued" | "running" | "completed" | "failed" | "waiting_input" | "cancelling" | "cancelled";
 
 export interface TaskError {
   type: string;
@@ -226,6 +226,7 @@ export interface RunEvent {
 }
 
 export interface ConversationTurn {
+  run_id: string;
   query: string;
   response_preview: string;
   status: string;

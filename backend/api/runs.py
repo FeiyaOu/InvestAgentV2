@@ -177,9 +177,10 @@ class RunStore:
 class RunManager:
     """Executes graph runs on a bounded pool; each run's thread_id is its conversation_id."""
 
-    def __init__(self, graph, store: RunStore, *, max_workers: int = 2, config_factory=None):
+    def __init__(self, graph, store: RunStore, *, max_workers: int = 2, config_factory=None, executor=None):
         self.graph, self.store = graph, store
-        self._pool = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="invest-run")
+        self._owns_pool = executor is None
+        self._pool = executor or ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="invest-run")
         self._config_factory = config_factory or (lambda: {})
 
     def start(self, *, query: str, conversation_id: str | None, user_id: str) -> RunRecord:
@@ -225,7 +226,8 @@ class RunManager:
         return record
 
     def shutdown(self):
-        self._pool.shutdown(wait=False, cancel_futures=True)
+        if self._owns_pool:
+            self._pool.shutdown(wait=False, cancel_futures=True)
 
     def _config(self, record: RunRecord) -> dict:
         config = dict(self._config_factory())

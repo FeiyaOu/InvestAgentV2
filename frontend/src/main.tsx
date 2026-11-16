@@ -12,13 +12,13 @@ const queryClient = new QueryClient({ defaultOptions: { queries: { refetchOnWind
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <SessionProvider>
-          <BrowserRouter>
+      <BrowserRouter>
+        <AuthProvider>
+          <SessionProvider>
             <App />
-          </BrowserRouter>
-        </SessionProvider>
-      </AuthProvider>
+          </SessionProvider>
+        </AuthProvider>
+      </BrowserRouter>
     </QueryClientProvider>
   </StrictMode>,
 );

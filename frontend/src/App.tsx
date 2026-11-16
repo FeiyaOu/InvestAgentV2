@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { createRun, listRuns } from "./api/client";
 import { Icon, type IconName } from "./components/Icon";
 import { LoginPage } from "./features/auth/LoginPage";
@@ -19,25 +19,35 @@ const NAV: { name: string; to: string; icon: IconName }[] = [
 
 export default function App() {
   const { user, ready, logout } = useAuth();
+  const location = useLocation();
   if (!ready) return null;
-  if (!user) return <LoginPage />;
-  return <Workbench userEmail={user.email} displayName={user.display_name} onLogout={logout} />;
+  if (location.pathname === "/login") {
+    if (user && !user.is_guest) return <Navigate to="/" replace />;
+    return <LoginPage />;
+  }
+  // A reopened guest page has no credentials for the old run/report URL.
+  if (!user && location.pathname !== "/") return <Navigate to="/" replace />;
+  return <Workbench key={user && !user.is_guest ? user.id : "guest"} userEmail={user?.email ?? ""}
+    displayName={user?.display_name ?? "访客"} onLogout={logout} />;
 }
 
 function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; displayName: string; onLogout: () => void }) {
+  const { user, ensureGuest } = useAuth();
+  const guest = !user || Boolean(user.is_guest);
   const { conversationId, setConversationId, newConversation } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const recent = useQuery({ queryKey: ["runs", "recent"], queryFn: () => listRuns(5), staleTime: 10_000 });
+  const recent = useQuery({ queryKey: ["runs", "recent"], queryFn: () => listRuns(5), staleTime: 10_000, enabled: Boolean(user) });
 
   const submit = async (query: string) => {
     if (submitting) return;
     setSubmitting(true);
     setSubmitError(null);
     try {
+      if (guest) await ensureGuest();
       const created = await createRun(query, conversationId);
       setConversationId(created.conversation_id);
       void queryClient.invalidateQueries({ queryKey: ["runs"] });
@@ -97,13 +107,14 @@ function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; di
         </div>
 
         <div className="sidebar-bottom">
-          <button className="user-card" title={userEmail} onClick={onLogout}>
+          <button className="user-card" title={guest ? "登录后按账号保存历史和报告" : userEmail}
+            onClick={() => { if (guest) navigate("/login"); else { onLogout(); navigate("/"); } }}>
             <div className="avatar">{(displayName || userEmail).slice(0, 1).toUpperCase()}</div>
             <span>
-              <b>{displayName || userEmail}</b>
-              <small>点击退出登录</small>
+              <b>{guest ? "登录 / 注册" : displayName || userEmail}</b>
+              <small>{guest ? "访客内容仅当前页面保留" : "点击退出登录"}</small>
             </span>
-            <Icon name="close" size={16} />
+            <Icon name={guest ? "user" : "close"} size={16} />
           </button>
         </div>
       </aside>
@@ -113,7 +124,7 @@ function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; di
           <div className="context-pill" title={conversationId ?? ""}>
             {conversationId ? `当前对话 ${conversationId.slice(-6)}` : "新对话"}
           </div>
-          <div className="context-pill">同一对话内最近 3 轮进入上下文</div>
+          <div className="context-pill">{guest ? "访客模式 · 关闭或刷新后清空" : "同一对话内最近 3 轮进入上下文"}</div>
         </header>
         {submitError && <div className="zh-notice error zh-topnotice">提交失败：{submitError}</div>}
         <Routes>

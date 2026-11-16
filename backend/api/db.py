@@ -1,7 +1,9 @@
 """Engine, schema creation and the checkpointer that shares the database."""
-from contextlib import contextmanager
+import threading
+from contextlib import contextmanager, nullcontext
 
 from sqlalchemy import event
+from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, SQLModel, create_engine
 
 from api import models  # noqa: F401  # Register tables on the metadata.
@@ -9,7 +11,11 @@ from api import models  # noqa: F401  # Register tables on the metadata.
 
 def make_engine(database_url: str):
     if database_url.startswith("sqlite"):
-        engine = create_engine(database_url, connect_args={"check_same_thread": False})
+        memory = database_url in {"sqlite://", "sqlite:///:memory:"}
+        engine = create_engine(database_url, connect_args={"check_same_thread": False},
+                               **({"poolclass": StaticPool} if memory else {}))
+        if memory:
+            engine.update_execution_options(session_lock=threading.RLock())
 
         @event.listens_for(engine, "connect")
         def _sqlite_pragmas(dbapi_connection, _record):
@@ -29,9 +35,11 @@ def init_db(engine) -> None:
 
 @contextmanager
 def session_scope(engine):
-    with Session(engine) as session:
-        yield session
-        session.commit()
+    # Guest SQLite lives on one in-memory connection, shared by HTTP and workers.
+    with engine.get_execution_options().get("session_lock", nullcontext()):
+        with Session(engine) as session:
+            yield session
+            session.commit()
 
 
 def open_checkpointer(database_url: str):

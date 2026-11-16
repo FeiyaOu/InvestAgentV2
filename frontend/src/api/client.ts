@@ -31,7 +31,7 @@ async function request<T>(path: string, init?: RequestInit, { auth = true }: { a
     } catch {
       /* non-JSON error body */
     }
-    if (response.status === 401 && auth) onUnauthorized();
+    if (response.status === 401 && auth && token === getToken()) onUnauthorized();
     throw new ApiError(response.status, detail);
   }
   return (await response.json()) as T;
@@ -42,7 +42,18 @@ async function request<T>(path: string, init?: RequestInit, { auth = true }: { a
 export interface TokenResponse {
   access_token: string;
   token_type: string;
-  user: { id: string; email: string; display_name: string };
+  user: { id: string; email: string; display_name: string; is_guest?: boolean };
+}
+
+export function createGuest() {
+  return request<TokenResponse>("/auth/guest", { method: "POST" }, { auth: false });
+}
+
+export async function endGuest(token: string) {
+  try {
+    await fetch(`${BASE}/auth/guest/end`, { method: "POST", keepalive: true,
+      headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) });
+  } catch { /* Server idle expiry handles browsers that cannot deliver pagehide. */ }
 }
 
 export function register(email: string, password: string, display_name: string) {

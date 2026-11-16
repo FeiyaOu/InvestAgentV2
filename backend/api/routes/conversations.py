@@ -3,25 +3,25 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from api import repository
 from api.db import session_scope
-from api.deps import CurrentUser, current_user
+from api.deps import CurrentUser, current_user, request_engine, request_manager
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 @router.get("")
 def list_conversations(request: Request, user: CurrentUser = Depends(current_user)):
-    with session_scope(request.app.state.engine) as session:
+    with session_scope(request_engine(request)) as session:
         return repository.list_conversations(session, user.id)
 
 
 @router.get("/{conversation_id}")
 def get_conversation(conversation_id: str, request: Request, user: CurrentUser = Depends(current_user)):
-    with session_scope(request.app.state.engine) as session:
+    with session_scope(request_engine(request)) as session:
         conversation = repository.conversation_for_user(session, conversation_id, user.id)
         if conversation is None:
             raise HTTPException(status_code=404, detail="conversation not found")
         title, turn_count = conversation.title, conversation.turn_count
-    manager = request.app.state.run_manager
+    manager = request_manager(request)
     runs = [{k: v for k, v in r.snapshot().items() if k not in {"analysis_snapshots", "strategy_series", "report_progress", "planner_attempts"}}
             for r in manager.store.for_conversation(conversation_id)]
     try:

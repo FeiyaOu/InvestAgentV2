@@ -13,7 +13,8 @@ from pydantic import ValidationError
 
 from src.core.datasets import DatasetStore
 from src.orchestration.composer import composer
-from src.orchestration.parent_state import ParentState, create_parent_state, summarize_turns
+from src.orchestration.history import compact_history
+from src.orchestration.parent_state import ParentState, build_conversation_context, create_parent_state, extract_facts
 from src.orchestration.planner import planner
 from src.orchestration.planner_schemas import TaskPlan
 from src.orchestration.supervisor import create_supervisor_graph
@@ -26,10 +27,11 @@ PREVIEW_CHARS = 1200
 
 
 def _initialize(state: ParentState) -> dict:
-    """Rebuild every per-request field; `turns` is deliberately absent so the reducer keeps it."""
+    """Rebuild every per-request field; thread channels are deliberately absent so their reducers keep them."""
     turns = state.get("turns") or []
     # A stored thread outranks caller-supplied context, which may be stale on later turns.
-    context = summarize_turns(turns) if turns else state.get("conversation_context", "")
+    context = (build_conversation_context(turns, state.get("conversation_facts"), state.get("history_summary"))
+               if turns else state.get("conversation_context", ""))
     try:
         return create_parent_state(state.get("user_query"), conversation_context=context,
                                    report_parameters=state.get("report_parameters"))
@@ -60,10 +62,15 @@ def _record_turn(state: ParentState) -> dict:
     if not state.get("user_query"):
         return {}
     status = state.get("supervisor_status") or state.get("planning_status") or state.get("composition_status") or "failed"
-    return {"turns": [{"query": state["user_query"],
-                       "response_preview": (state.get("final_response") or "")[:PREVIEW_CHARS],
-                       "status": status, "clarifications": list(state.get("clarifications", [])),
-                       "completed_at": datetime.now(timezone.utc).isoformat()}]}
+    # Prefer the composer's answer: final_response appends per-task details that would crowd out the conclusion.
+    preview = state.get("composition_summary") or state.get("final_response") or ""
+    update = {"turns": [{"query": state["user_query"], "response_preview": preview[:PREVIEW_CHARS],
+                         "status": status, "clarifications": list(state.get("clarifications", [])),
+                         "completed_at": datetime.now(timezone.utc).isoformat()}]}
+    facts = extract_facts(state.get("plan"), state.get("task_results"))
+    if facts:
+        update["conversation_facts"] = facts
+    return update
 
 
 def create_parent_graph(*, market_data_graph=None, report_graph=None, analytics_graph=None, strategy_graph=None,
@@ -121,6 +128,7 @@ def create_parent_graph(*, market_data_graph=None, report_graph=None, analytics_
     graph.add_node("supervisor", supervise)
     graph.add_node("composer", composer)
     graph.add_node("record_turn", _record_turn)
+    graph.add_node("compact_history", compact_history)
     graph.add_edge(START, "initialize")
     graph.add_conditional_edges("initialize", lambda s: "composer" if s["planning_status"] == "failed" else "planner",
                                 {"composer": "composer", "planner": "planner"})
@@ -132,5 +140,6 @@ def create_parent_graph(*, market_data_graph=None, report_graph=None, analytics_
     graph.add_conditional_edges("planner", after_planner, routes)
     graph.add_edge("supervisor", "composer")
     graph.add_edge("composer", "record_turn")
-    graph.add_edge("record_turn", END)
+    graph.add_edge("record_turn", "compact_history")
+    graph.add_edge("compact_history", END)
     return graph.compile(checkpointer=checkpointer)

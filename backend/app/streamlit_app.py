@@ -405,7 +405,7 @@ def _run(user_query, slots, dslots):
                             analysis_snapshots=snapshots, strategy_series=strategy_series,
                             turn_count=st.session_state["turn_count"] + 1)
     st.session_state["conversation_history"].append({"query": user_query.strip(),
-        "response_preview": (current.get("final_response") or "")[:1200],
+        "response_preview": (current.get("composition_summary") or current.get("final_response") or "")[:1200],
         "status": current.get("supervisor_status") or current.get("planning_status"), "seconds": seconds})
     st.rerun()
 

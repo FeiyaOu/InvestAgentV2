@@ -11,7 +11,7 @@ it("shows the workbench homepage before any login or guest API request completes
   const html = renderToStaticMarkup(<QueryClientProvider client={new QueryClient()}><SessionProvider>
     <MemoryRouter><App /></MemoryRouter>
   </SessionProvider></QueryClientProvider>);
-  expect(html).toContain("AI 驱动的投研工作台");
+  expect(html).toContain("您的智能投研工作台");
   expect(html).toContain("登录 / 注册");
   expect(html).toContain("访客");
   expect(html).not.toContain("登录工作区");

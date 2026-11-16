@@ -24,17 +24,17 @@ export function LineChart({ series, unit, height = 280 }: { series: LineSeries[]
   const option = {
     animation: false,
     color: PALETTE,
-    grid: { left: 56, right: 16, top: 28, bottom: 36 },
+    grid: { containLabel: true, left: 56, right: 16, top: 28, bottom: 36 },
     tooltip: {
       trigger: "axis",
       valueFormatter: (value: number) => formatByUnit(value, unit),
     },
-    legend: series.length > 1 ? { top: 0, textStyle: { fontSize: 11 } } : undefined,
-    xAxis: { type: "category", data: dates, boundaryGap: false, axisLabel: { fontSize: 10, hideOverlap: true } },
+    legend: series.length > 1 ? { top: 0, textStyle: { fontSize: 13.2 } } : undefined,
+    xAxis: { type: "category", data: dates, boundaryGap: false, axisLabel: { fontSize: 12, hideOverlap: true } },
     yAxis: {
       type: "value",
       scale: true,
-      axisLabel: { fontSize: 10, formatter: (value: number) => formatByUnit(value, unit) },
+      axisLabel: { fontSize: 12, formatter: (value: number) => formatByUnit(value, unit) },
       splitLine: { lineStyle: { color: "#e4e8e5" } },
     },
     series: series.map((s) => {
@@ -68,10 +68,10 @@ export function BarChart({
   const option = {
     animation: false,
     color: PALETTE,
-    grid: { left: 56, right: 16, top: 20, bottom: 36 },
+    grid: { containLabel: true, left: 56, right: 16, top: 20, bottom: 36 },
     tooltip: { trigger: "axis", valueFormatter: (value: number) => formatByUnit(value, unit) },
-    xAxis: { type: "category", data: categories, axisLabel: { fontSize: 11 } },
-    yAxis: { type: "value", axisLabel: { fontSize: 10, formatter: (value: number) => formatByUnit(value, unit) } },
+    xAxis: { type: "category", data: categories, axisLabel: { fontSize: 13.2 } },
+    yAxis: { type: "value", axisLabel: { fontSize: 12, formatter: (value: number) => formatByUnit(value, unit) } },
     series: [{ type: "bar", data: values, barMaxWidth: 48, itemStyle: { borderRadius: [4, 4, 0, 0] } }],
   };
   return <ReactECharts option={option} style={{ height }} notMerge lazyUpdate opts={{ renderer: "svg" }} />;
@@ -90,12 +90,12 @@ export function Heatmap({
   matrix.forEach((row, i) => row.forEach((v, j) => v != null && data.push([j, i, Number(v.toFixed(3))])));
   const option = {
     animation: false,
-    grid: { left: 90, right: 60, top: 10, bottom: 50 },
+    grid: { containLabel: true, left: 90, right: 60, top: 10, bottom: 50 },
     tooltip: { position: "top" },
-    xAxis: { type: "category", data: labels, axisLabel: { fontSize: 10 } },
-    yAxis: { type: "category", data: labels, axisLabel: { fontSize: 10 } },
+    xAxis: { type: "category", data: labels, axisLabel: { fontSize: 12 } },
+    yAxis: { type: "category", data: labels, axisLabel: { fontSize: 12 } },
     visualMap: { min: -1, max: 1, calculable: false, orient: "horizontal", left: "center", bottom: 0, inRange: { color: ["#a85c50", "#f4f6f2", "#397c67"] } },
-    series: [{ type: "heatmap", data, label: { show: true, fontSize: 10 } }],
+    series: [{ type: "heatmap", data, label: { show: true, fontSize: 12 } }],
   };
   return <ReactECharts option={option} style={{ height }} notMerge lazyUpdate opts={{ renderer: "svg" }} />;
 }

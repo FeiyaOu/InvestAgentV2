@@ -73,7 +73,7 @@
   border: 1px solid #345147;
   border-radius: 4px;
   padding: 2px 5px;
-  font: 600 9px "DM Sans";
+  font: 600 10.8px "DM Sans";
   letter-spacing: 0.1em;
 }
 .new-chat {
@@ -127,7 +127,7 @@
   background: #2e4b40;
   color: #b9efb7;
   text-align: center;
-  font: 600 10px "DM Sans";
+  font: 600 12px "DM Sans";
 }
 .recent {
   margin-top: 30px;
@@ -205,7 +205,7 @@
 }
 .user-card small {
   color: #698478;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .settings {
   width: 30px;
@@ -459,7 +459,7 @@
   border: 0;
   background: transparent;
   color: #53655c;
-  font-size: 13.2px;
+  font-size: 15.84px;
   font-weight: 600;
 }
 .examples-toggle > span:first-child {
@@ -522,7 +522,7 @@
 }
 .example-index {
   color: #a2afa8;
-  font: 600 9px "DM Sans";
+  font: 600 10.8px "DM Sans";
   letter-spacing: 0.06em;
 }
 
@@ -537,7 +537,7 @@
 }
 .section-heading > div > span {
   color: #5b7f6e;
-  font-size: 12px;
+  font-size: 13.2px;
   font-weight: 700;
   letter-spacing: 0.14em;
 }
@@ -591,7 +591,7 @@
 }
 .ability-top > span {
   color: #96a29b;
-  font-size: 9.6px;
+  font-size: 13.2px;
   letter-spacing: 0.08em;
 }
 .ability-grid h3 {
@@ -612,7 +612,7 @@ footer {
   display: flex;
   justify-content: space-between;
   color: #a0aaa4;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 
 @media (max-width: 900px) {
@@ -755,7 +755,7 @@ footer {
   display: block;
   margin-bottom: 7px;
   color: #799087;
-  font-size: 10.8px;
+  font-size: 12.96px;
   font-weight: 700;
   letter-spacing: 0.12em;
 }
@@ -855,7 +855,7 @@ footer {
   place-items: center;
   border: 1px solid #dce3de;
   border-radius: 50%;
-  font: 600 9px "DM Sans";
+  font: 600 10.8px "DM Sans";
 }
 .research-step b {
   font-size: 13.2px;
@@ -863,7 +863,7 @@ footer {
 }
 .research-step small {
   margin-left: auto;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .research-step.active {
   color: #2e624a;
@@ -919,7 +919,7 @@ footer {
 }
 .answer-head span {
   color: #9aa49f;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .answer-actions {
   margin-left: auto;
@@ -935,7 +935,7 @@ footer {
   border-radius: 6px;
   background: white;
   color: #718078;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .answer-actions button.saved {
   color: #2d6c4b;
@@ -954,7 +954,7 @@ footer {
   display: block;
   margin-bottom: 9px;
   color: #407155;
-  font-size: 10.8px;
+  font-size: 12.96px;
   font-weight: 700;
   letter-spacing: 0.12em;
 }
@@ -973,7 +973,7 @@ footer {
   align-items: center;
   gap: 8px;
   color: #86948c;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .confidence > span {
   width: 65px;
@@ -998,7 +998,7 @@ footer {
 }
 .result-title > span {
   color: #779487;
-  font: 600 11px "DM Sans";
+  font: 600 13.2px "DM Sans";
 }
 .result-title h2 {
   margin: 0;
@@ -1008,12 +1008,12 @@ footer {
 .result-title p {
   margin: 4px 0 0;
   color: #97a19c;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .result-title > small {
   margin-left: auto;
   color: #a6afaa;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .metric-row {
   display: grid;
@@ -1033,7 +1033,7 @@ footer {
 .metric-row span {
   display: block;
   color: #85928b;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .metric-row strong {
   display: block;
@@ -1043,7 +1043,7 @@ footer {
 }
 .metric-row small {
   color: #9aa39f;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .metric-row em {
   margin-left: 3px;
@@ -1064,7 +1064,7 @@ footer {
   padding: 10px 16px;
   background: #f7f9f7;
   color: #87928c;
-  font-size: 9.6px;
+  font-size: 11.52px;
   text-align: left;
 }
 .data-table td {
@@ -1081,7 +1081,7 @@ footer {
   border-radius: 4px;
   background: #eaf4eb;
   color: #407755;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .value-tag {
   background: #f4f0e5;
@@ -1102,12 +1102,12 @@ footer {
   align-items: center;
   gap: 6px;
   color: #6d7b74;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .legend b {
   margin-right: 12px;
   color: #40534a;
-  font: 600 9px "DM Sans";
+  font: 600 10.8px "DM Sans";
 }
 .legend-a,
 .legend-b {
@@ -1127,7 +1127,7 @@ footer {
   border-radius: 5px;
   background: #fff;
   color: #77847e;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .chart-area {
   position: relative;
@@ -1197,14 +1197,14 @@ footer {
   flex-direction: column;
   justify-content: space-between;
   color: #a0aaa4;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .chart-xlabels {
   display: flex;
   justify-content: space-between;
   padding-top: 5px;
   color: #a0aaa4;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .chart-insight {
   margin-top: 9px;
@@ -1221,7 +1221,7 @@ footer {
 }
 .chart-insight p {
   margin: 0;
-  font-size: 10.8px;
+  font-size: 12.96px;
   line-height: 1.7;
 }
 .chart-insight b {
@@ -1241,7 +1241,7 @@ footer {
 .risk-level {
   padding: 3px 6px;
   border-radius: 4px;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .risk-level.high {
   color: #a64f43;
@@ -1263,7 +1263,7 @@ footer {
 .risk-grid p {
   margin: 0;
   color: #849089;
-  font-size: 10.8px;
+  font-size: 12.96px;
   line-height: 1.65;
 }
 .catl-summary {
@@ -1295,7 +1295,7 @@ footer {
 .event-timeline time {
   padding-top: 3px;
   color: #809087;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .event-timeline article > span {
   width: 8px;
@@ -1317,7 +1317,7 @@ footer {
 .event-timeline p {
   margin: 0;
   color: #839088;
-  font-size: 10.8px;
+  font-size: 12.96px;
   line-height: 1.65;
 }
 .catl-risks {
@@ -1332,7 +1332,7 @@ footer {
   padding-top: 9px;
   border-top: 1px solid #edf0ee;
   color: #8c9992;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .catl-report .report-cover {
   background: #173b37;
@@ -1353,7 +1353,7 @@ footer {
 }
 .industry-hero-card > div:first-child > span {
   color: #8fb7a0;
-  font: 700 8px "DM Sans";
+  font: 700 9.6px "DM Sans";
   letter-spacing: 0.14em;
 }
 .industry-hero-card h2 {
@@ -1380,7 +1380,7 @@ footer {
   width: 100%;
   margin-bottom: 7px;
   color: #8fab9c;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .industry-score strong {
   color: #c8efc5;
@@ -1389,13 +1389,13 @@ footer {
 .industry-score small {
   margin-left: 4px;
   color: #799b89;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .industry-score i {
   width: 100%;
   margin-top: 3px;
   color: #8ed49b;
-  font-size: 9.6px;
+  font-size: 11.52px;
   font-style: normal;
 }
 .industry-metrics {
@@ -1415,7 +1415,7 @@ footer {
 .industry-metrics span {
   display: block;
   color: #829088;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .industry-metrics strong {
   margin-top: 5px;
@@ -1426,7 +1426,7 @@ footer {
 .industry-metrics em {
   margin-left: 5px;
   color: #84928b;
-  font-size: 9.6px;
+  font-size: 11.52px;
   font-style: normal;
 }
 .market-forecast {
@@ -1454,7 +1454,7 @@ footer {
 .forecast-bars span {
   margin-bottom: 5px;
   color: #53665c;
-  font: 600 8px "DM Sans";
+  font: 600 9.6px "DM Sans";
 }
 .forecast-bars i {
   width: 64%;
@@ -1466,7 +1466,7 @@ footer {
   position: relative;
   top: 16px;
   color: #909b95;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .forecast-note {
   margin-top: 27px;
@@ -1483,7 +1483,7 @@ footer {
 }
 .forecast-note p {
   margin: 0;
-  font-size: 10.8px;
+  font-size: 12.96px;
   line-height: 1.7;
 }
 .forecast-note b {
@@ -1508,7 +1508,7 @@ footer {
 }
 .value-chain article > span {
   color: #618270;
-  font-size: 9.6px;
+  font-size: 11.52px;
   font-weight: 600;
 }
 .value-chain article > strong {
@@ -1527,13 +1527,13 @@ footer {
   border-radius: 3px;
   background: #eaf2eb;
   color: #547161;
-  font-size: 8.4px;
+  font-size: 10.08px;
   font-weight: 500;
 }
 .value-chain article p {
   margin: 14px 0 0;
   color: #849088;
-  font-size: 9.6px;
+  font-size: 11.52px;
   line-height: 1.65;
 }
 .company-landscape {
@@ -1549,7 +1549,7 @@ footer {
   padding: 0 16px;
   border-bottom: 1px solid #edf0ee;
   color: #637169;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .company-landscape > div:last-child {
   border: 0;
@@ -1558,7 +1558,7 @@ footer {
   min-height: 35px;
   background: #f6f8f6;
   color: #8d9892;
-  font-size: 8.4px;
+  font-size: 10.08px;
   font-weight: 600;
 }
 .company-landscape div > span:first-child {
@@ -1568,19 +1568,19 @@ footer {
 }
 .company-landscape i {
   color: #9aa69f;
-  font: 7px "DM Sans";
+  font: 8.4px "DM Sans";
   font-style: normal;
 }
 .company-landscape b {
   color: #3e5046;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .company-landscape em {
   padding: 3px 6px;
   border-radius: 4px;
   background: #edf4ee;
   color: #4f795f;
-  font-size: 8.4px;
+  font-size: 10.08px;
   font-style: normal;
 }
 .catalyst-risk-grid {
@@ -1611,7 +1611,7 @@ footer {
   place-items: center;
   border-radius: 50%;
   background: #dcecdf;
-  font: 700 11px "DM Sans";
+  font: 700 13.2px "DM Sans";
 }
 .risk-column h3 {
   background: #faf5f3;
@@ -1629,12 +1629,12 @@ footer {
 }
 .catalyst-risk-grid article b {
   color: #45564d;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .catalyst-risk-grid article p {
   margin: 4px 0 0;
   color: #87928c;
-  font-size: 9.6px;
+  font-size: 11.52px;
   line-height: 1.6;
 }
 .robotics-report .report-cover {
@@ -1645,7 +1645,7 @@ footer {
   align-items: center;
   gap: 6px;
   color: #77867e;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .market-live i {
   width: 6px;
@@ -1676,7 +1676,7 @@ footer {
 .index-main > span small {
   margin-left: 6px;
   color: #9aa49f;
-  font: 7px "DM Sans";
+  font: 8.4px "DM Sans";
 }
 .index-main > strong {
   display: block;
@@ -1692,7 +1692,7 @@ footer {
 .index-main em,
 .index-main b {
   color: #bd5449;
-  font: 600 10px "DM Sans";
+  font: 600 12px "DM Sans";
   font-style: normal;
 }
 .index-stat {
@@ -1707,15 +1707,15 @@ footer {
   display: grid;
   gap: 4px;
   color: #909b95;
-  font-size: 8.4px;
+  font-size: 10.08px;
 }
 .index-stat strong {
   color: #4f6057;
-  font: 500 9px "DM Sans";
+  font: 500 10.8px "DM Sans";
 }
 .market-tone span {
   color: #8e9993;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .market-tone strong {
   display: block;
@@ -1738,7 +1738,7 @@ footer {
   display: block;
   margin-top: 5px;
   color: #9ba59f;
-  font: 7px "DM Sans";
+  font: 8.4px "DM Sans";
   text-align: right;
 }
 .market-summary {
@@ -1756,7 +1756,7 @@ footer {
 }
 .market-summary p {
   margin: 0;
-  font-size: 10.8px;
+  font-size: 12.96px;
   line-height: 1.7;
 }
 .market-summary b {
@@ -1769,7 +1769,7 @@ footer {
   align-items: center;
   gap: 5px;
   color: #8c9891;
-  font-size: 8.4px;
+  font-size: 10.08px;
 }
 .market-legend span {
   width: 13px;
@@ -1822,14 +1822,14 @@ footer {
   flex-direction: column;
   justify-content: space-between;
   color: #a1aaa5;
-  font: 7px "DM Sans";
+  font: 8.4px "DM Sans";
 }
 .intraday-x {
   display: flex;
   justify-content: space-between;
   padding-top: 5px;
   color: #a1aaa5;
-  font: 7px "DM Sans";
+  font: 8.4px "DM Sans";
 }
 .session-points {
   margin-top: 9px;
@@ -1844,18 +1844,18 @@ footer {
 }
 .session-points time {
   color: #a0aaa4;
-  font: 7px "DM Sans";
+  font: 8.4px "DM Sans";
 }
 .session-points b {
   display: block;
   margin: 5px 0 3px;
   color: #53635b;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .session-points p {
   margin: 0;
   color: #8d9892;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .breadth-card {
   padding: 20px;
@@ -1871,7 +1871,7 @@ footer {
   align-items: baseline;
   gap: 6px;
   color: #8b9790;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .breadth-numbers strong {
   color: #46584e;
@@ -1904,12 +1904,12 @@ footer {
   display: flex;
   justify-content: space-between;
   color: #89958e;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .breadth-detail b {
   margin-left: 4px;
   color: #596960;
-  font: 500 8px "DM Sans";
+  font: 500 9.6px "DM Sans";
 }
 .up-text {
   color: #b5544b !important;
@@ -1930,7 +1930,7 @@ footer {
   border-radius: 4px;
   background: transparent;
   color: #849089;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .stock-tabs button.active {
   background: #f0e8e4;
@@ -1949,7 +1949,7 @@ footer {
   padding: 0 16px;
   border-bottom: 1px solid #edf0ee;
   color: #637169;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .stock-table > div:last-child {
   border: 0;
@@ -1958,7 +1958,7 @@ footer {
   min-height: 34px;
   background: #f7f9f7;
   color: #909a95;
-  font-size: 8.4px;
+  font-size: 10.08px;
 }
 .stock-table > div > span:first-child {
   display: flex;
@@ -1976,7 +1976,7 @@ footer {
 }
 .stock-table small {
   color: #9ba59f;
-  font: 7px "DM Sans";
+  font: 8.4px "DM Sans";
 }
 .stock-up {
   color: #bb5148 !important;
@@ -2001,7 +2001,7 @@ footer {
 }
 .sector-performance span {
   color: #596a61;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .sector-performance > div > div {
   height: 6px;
@@ -2022,7 +2022,7 @@ footer {
 }
 .sector-performance b {
   text-align: right;
-  font: 600 8px "DM Sans";
+  font: 600 9.6px "DM Sans";
 }
 .market-report .report-cover {
   background: #493b32;
@@ -2061,19 +2061,19 @@ footer {
 }
 .report-cover > span {
   color: #bfe9bd;
-  font: 700 10px "DM Sans";
+  font: 700 12px "DM Sans";
 }
 .report-cover small {
   display: block;
   margin-top: 9px;
   color: #81a392;
-  font: 5px/1.4 "DM Sans";
+  font: 6px/1.4 "DM Sans";
   letter-spacing: 0.13em;
 }
 .report-cover b {
   display: block;
   margin-top: 9px;
-  font-size: 10.8px;
+  font-size: 12.96px;
   line-height: 1.5;
 }
 .report-cover i {
@@ -2081,7 +2081,7 @@ footer {
   bottom: 9px;
   left: 11px;
   color: #79998a;
-  font: 6px "DM Sans";
+  font: 7.2px "DM Sans";
   font-style: normal;
 }
 .report-info {
@@ -2089,7 +2089,7 @@ footer {
 }
 .report-info > span {
   color: #4b815e;
-  font-size: 9.6px;
+  font-size: 11.52px;
   font-weight: 700;
   letter-spacing: 0.1em;
 }
@@ -2102,7 +2102,7 @@ footer {
   max-width: 470px;
   margin: 0;
   color: #7f8c85;
-  font-size: 10.8px;
+  font-size: 12.96px;
   line-height: 1.7;
 }
 .report-info > div {
@@ -2110,7 +2110,7 @@ footer {
   gap: 14px;
   margin-top: 9px;
   color: #a1aaa5;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .report-buttons {
   display: flex;
@@ -2126,7 +2126,7 @@ footer {
   border-radius: 6px;
   background: white;
   color: #345744;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .report-buttons button:first-child {
   border-color: #234a38;
@@ -2140,7 +2140,7 @@ footer {
   justify-content: space-between;
   border-top: 1px solid #e6eae7;
   color: #9aa59f;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .sources button {
   display: flex;
@@ -2150,7 +2150,7 @@ footer {
   border: 0;
   background: none;
   color: #728179;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .source-list {
   margin-top: 9px;
@@ -2172,17 +2172,17 @@ footer {
 }
 .source-list span {
   color: #a0aaa5;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .source-list b {
   color: #596860;
-  font-size: 9.6px;
+  font-size: 11.52px;
   font-weight: 500;
 }
 .source-list small {
   margin-left: auto;
   color: #5f8d6d;
-  font-size: 8.4px;
+  font-size: 10.08px;
 }
 .followup-bar {
   position: fixed;
@@ -2220,7 +2220,7 @@ footer {
 }
 .followup-bar span {
   color: #9aa49f;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .followup-bar button {
   width: 33px;
@@ -2281,7 +2281,7 @@ footer {
 }
 .report-toolbar span {
   color: #929d97;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .report-toolbar-actions {
   margin-left: auto;
@@ -2299,7 +2299,7 @@ footer {
   border-radius: 6px;
   background: #183e30;
   color: white;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .report-reader {
   height: calc(100vh - 62px);
@@ -2316,7 +2316,7 @@ footer {
   display: block;
   margin: 0 10px 12px;
   color: #88968e;
-  font-size: 9.6px;
+  font-size: 11.52px;
   font-weight: 700;
   letter-spacing: 0.12em;
 }
@@ -2329,7 +2329,7 @@ footer {
   border-radius: 5px;
   background: transparent;
   color: #728078;
-  font-size: 10.8px;
+  font-size: 12.96px;
   text-align: left;
 }
 .report-outline button.active {
@@ -2339,7 +2339,7 @@ footer {
 }
 .report-outline small {
   color: #a8b1ac;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .report-pages {
   flex: 1;
@@ -2392,7 +2392,7 @@ footer {
 }
 .report-brand small {
   color: #78988a;
-  font: 7px "DM Sans";
+  font: 8.4px "DM Sans";
   letter-spacing: 0.18em;
 }
 .cover-rule {
@@ -2403,7 +2403,7 @@ footer {
 }
 .report-type {
   color: #9bbbaa;
-  font-size: 10.8px;
+  font-size: 12.96px;
   letter-spacing: 0.15em;
 }
 .cover-page h1 {
@@ -2434,19 +2434,19 @@ footer {
 }
 .cover-meta small {
   color: #6f9583;
-  font-size: 8.4px;
+  font-size: 10.08px;
   letter-spacing: 0.1em;
 }
 .cover-meta b {
   color: #d7e8df;
-  font: 500 10px "DM Sans";
+  font: 500 12px "DM Sans";
 }
 .cover-page > p {
   position: absolute;
   bottom: 55px;
   left: 58px;
   color: #668a79;
-  font-size: 8.4px;
+  font-size: 10.08px;
 }
 .content-page > header {
   margin: 0;
@@ -2456,16 +2456,16 @@ footer {
   border-bottom: 1px solid #dce3de;
   background: none;
   color: #769083;
-  font-size: 8.4px;
+  font-size: 10.08px;
 }
 .content-page > header b {
   color: #2f5a45;
-  font: 600 9px "DM Sans";
+  font: 600 10.8px "DM Sans";
 }
 .page-kicker {
   margin-top: 62px;
   color: #548269;
-  font: 700 7px "DM Sans";
+  font: 700 8.4px "DM Sans";
   letter-spacing: 0.18em;
 }
 .content-page > h2 {
@@ -2498,7 +2498,7 @@ footer {
 .report-columns p {
   margin: 0;
   color: #6f7d76;
-  font-size: 9.6px;
+  font-size: 11.52px;
   line-height: 1.8;
 }
 .report-chart-mini {
@@ -2544,7 +2544,7 @@ footer {
   padding-top: 12px;
   border-top: 1px solid #dfe4e1;
   color: #9da8a2;
-  font-size: 7.2px;
+  font-size: 8.64px;
 }
 
 /* Report center and research history */
@@ -2562,7 +2562,7 @@ footer {
 }
 .workspace-head > div > span {
   color: #668878;
-  font: 700 8px "DM Sans";
+  font: 700 9.6px "DM Sans";
   letter-spacing: 0.18em;
 }
 .workspace-head h1 {
@@ -2586,7 +2586,7 @@ footer {
   border-radius: 7px;
   background: white;
   color: #596b61;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .workspace-tabs {
   height: 62px;
@@ -2600,7 +2600,7 @@ footer {
   border-radius: 6px;
   background: transparent;
   color: #7c8982;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .workspace-tabs button.active {
   background: #e7efe9;
@@ -2659,25 +2659,25 @@ footer {
 }
 .library-cover span {
   color: #a5cbb3;
-  font: 5px "DM Sans";
+  font: 6px "DM Sans";
   letter-spacing: 0.12em;
 }
 .library-cover b {
   margin-top: 17px;
-  font-size: 9.6px;
+  font-size: 11.52px;
   line-height: 1.5;
 }
 .library-cover small {
   margin-top: auto;
   color: rgba(255, 255, 255, 0.5);
-  font: 6px "DM Sans";
+  font: 7.2px "DM Sans";
 }
 .library-info {
   flex: 1;
 }
 .library-info > span {
   color: #54826a;
-  font-size: 9.6px;
+  font-size: 11.52px;
   font-weight: 600;
 }
 .library-info h2 {
@@ -2688,7 +2688,7 @@ footer {
 .library-info p {
   margin: 0;
   color: #929c97;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .library-actions {
   display: flex;
@@ -2704,7 +2704,7 @@ footer {
   border-radius: 6px;
   background: white;
   color: #63736a;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .library-actions button:first-child {
   border-color: #315843;
@@ -2714,7 +2714,7 @@ footer {
 .library-foot {
   padding: 22px 0;
   color: #9ca6a1;
-  font-size: 9.6px;
+  font-size: 11.52px;
   text-align: center;
 }
 .history-search {
@@ -2735,7 +2735,7 @@ footer {
   outline: 0;
   border: 0;
   color: #42544a;
-  font-size: 10.8px;
+  font-size: 12.96px;
 }
 .history-summary {
   margin: 22px 0 14px;
@@ -2761,7 +2761,7 @@ footer {
 }
 .history-summary span {
   color: #8d9892;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .history-panel {
   overflow: hidden;
@@ -2783,7 +2783,7 @@ footer {
 }
 .history-panel-head span {
   color: #a0aaa5;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .history-panel-head button {
   margin-left: auto;
@@ -2795,7 +2795,7 @@ footer {
   border-radius: 5px;
   background: white;
   color: #78857e;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .history-list > button {
   width: 100%;
@@ -2838,12 +2838,12 @@ footer {
 }
 .history-main small {
   color: #99a39e;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .history-duration {
   width: 70px;
   color: #8b9690;
-  font: 8px "DM Sans";
+  font: 9.6px "DM Sans";
 }
 .history-status {
   width: 68px;
@@ -2851,7 +2851,7 @@ footer {
   align-items: center;
   gap: 5px;
   color: #568068;
-  font-size: 9.6px;
+  font-size: 11.52px;
 }
 .history-status i {
   width: 5px;
@@ -3038,7 +3038,7 @@ footer {
 .zh-notice { border-radius: 9px; padding: 10px 14px; font-size: 12.5px; line-height: 1.6; border: 1px solid #dfe5e1; background: #f6f8f5; color: #2a3b33; margin: 10px 0; }
 .zh-notice.warn { background: #fbf6e9; border-color: #e8dcb6; color: #6b5a22; }
 .zh-notice.error { background: #fbeeec; border-color: #ead0cb; color: #8a3f34; }
-.zh-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 10px; font-size: 11px; font-weight: 600; white-space: nowrap; background: #eef1ee; color: #4e5c55; }
+.zh-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 10px; font-size: 13.2px; font-weight: 600; white-space: nowrap; background: #eef1ee; color: #4e5c55; }
 .zh-badge.green { background: #e6f1ec; color: #2f6b55; }
 .zh-badge.orange { background: #fbf0dc; color: #8a6420; }
 .zh-badge.red { background: #fbe8e5; color: #a04a3e; }
@@ -3046,11 +3046,11 @@ footer {
 .zh-task { border: 1px solid #e4e8e5; border-radius: 12px; padding: 16px 18px; background: #fff; margin-top: 12px; display: grid; gap: 10px; }
 .zh-task-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
 .zh-task-head b { display: block; font-size: 14px; line-height: 1.5; color: #18251f; }
-.zh-task-head small { color: #6f7c75; font-size: 11px; }
+.zh-task-head small { color: #6f7c75; font-size: 13.2px; }
 .zh-finding { border-top: 1px dashed #e4e8e5; padding-top: 12px; display: grid; gap: 10px; }
 .zh-finding-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
 .zh-finding-head b { font-size: 13px; }
-.zh-finding-head small { color: #6f7c75; font-size: 11px; }
+.zh-finding-head small { color: #6f7c75; font-size: 13.2px; }
 .zh-task .metric-row { margin: 0; }
 .zh-task .metric-row strong.negative { color: #a85c50; }
 .zh-task .chart-card { margin: 0; }
@@ -3063,12 +3063,12 @@ footer {
 .zh-kv dt { color: #6f7c75; white-space: nowrap; }
 .zh-kv dd { margin: 0; color: #18251f; word-break: break-all; }
 .zh-stages { display: flex; gap: 6px; flex-wrap: wrap; }
-.zh-stages span { font-size: 11px; padding: 3px 10px; border-radius: 999px; background: #eef1ee; color: #6f7c75; }
+.zh-stages span { font-size: 13.2px; padding: 3px 10px; border-radius: 999px; background: #eef1ee; color: #6f7c75; }
 .zh-stages span.done { background: #e6f1ec; color: #2f6b55; }
 .zh-stages span.active { background: #fbf0dc; color: #8a6420; }
 .zh-link-button { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 9px; background: #18251f; color: #fff; font-size: 12.5px; text-decoration: none; width: fit-content; }
-.zh-example-title { display: block; font-weight: 600; }
-.zh-example-hint { display: block; font-size: 11px; color: #6f7c75; margin-top: 2px; }
+.zh-example-title { display: block; font-size: 15.84px; font-weight: 600; }
+.zh-example-hint { display: block; font-size: 13.2px; color: #6f7c75; margin-top: 2px; }
 .md-body { font-size: 13.5px; line-height: 1.8; color: #243129; }
 .md-body p { margin: 0 0 8px; }
 .md-body ul, .md-body ol { padding-left: 20px; margin: 0 0 8px; }
@@ -3085,7 +3085,7 @@ footer {
 .zh-clarify { border: 1px solid #e8dcb6; background: #fbf6e9; border-radius: 14px; padding: 18px 20px; margin-top: 14px; display: grid; gap: 12px; }
 .zh-clarify-head { display: flex; gap: 10px; align-items: center; }
 .zh-clarify-head b { display: block; font-size: 14px; }
-.zh-clarify-head span { font-size: 11px; color: #6b5a22; }
+.zh-clarify-head span { font-size: 13.2px; color: #6b5a22; }
 .zh-clarify ol { margin: 0; padding-left: 20px; font-size: 13.5px; line-height: 1.7; }
 .zh-clarify-input { display: flex; gap: 10px; align-items: flex-end; }
 .zh-clarify-input textarea { flex: 1; border: 1px solid #e0d9c0; border-radius: 9px; padding: 10px 12px; font-size: 13px; resize: vertical; background: #fff; }
@@ -3093,7 +3093,7 @@ footer {
 .zh-turn:first-child { border-top: 0; }
 .zh-turn .history-main { flex: 1; min-width: 0; }
 .zh-turn .history-main b { display: block; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.zh-turn .history-main small { display: block; color: #6f7c75; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zh-turn .history-main small { display: block; color: #6f7c75; font-size: 13.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .history-status.partial i, .history-status.needs_clarification i { background: #c9a44c; }
 .history-status.failed i { background: #a85c50; }
 .zh-errors { font-size: 12px; color: #8a3f34; padding-left: 18px; }
@@ -3113,3 +3113,16 @@ footer {
 .zh-turn-button { width: 100%; text-align: left; background: none; border: 0; cursor: pointer; }
 .zh-turn-button.active { background: #f0f5f2; }
 .history-status.waiting_input i, .history-status.running i, .history-status.queued i { background: #c9a44c; }
+
+/* Gray helper text enlarged from 12px to 14.4px. */
+.section-label,
+.recent small,
+.context-pill,
+.input-meta,
+.task-status p,
+.section-heading > p,
+.ability-grid p,
+.result-breadcrumb,
+.zh-muted {
+  font-size: 14.4px;
+}

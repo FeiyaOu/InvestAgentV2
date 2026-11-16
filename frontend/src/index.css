@@ -276,7 +276,7 @@
   align-items: center;
   gap: 7px;
   color: var(--color-text-secondary);
-  font-size: 13.2px;
+  font-size: 19.8px;
   font-weight: 600;
   letter-spacing: 0.1em;
 }
@@ -532,8 +532,9 @@
 }
 .section-heading {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
   margin-bottom: 22px;
 }
 .section-heading > div > span {
@@ -545,16 +546,17 @@
 .section-heading h2 {
   margin: 7px 0 0;
   color: var(--color-text-primary);
-  font-size: 26.4px;
-  letter-spacing: -0.03em;
+  font-size: 31.68px;
+  line-height: 1.2;
+  letter-spacing: -0.045em;
+  font-weight: 700;
 }
 .section-heading > p {
-  width: 330px;
-  margin: 0 0 2px;
+  margin: 10px 0 0;
   color: var(--color-text-tertiary);
   font-size: 12px;
   line-height: 1.7;
-  text-align: right;
+  text-align: center;
 }
 .ability-grid {
   display: grid;
@@ -705,7 +707,7 @@ footer {
   .section-heading > p {
     width: auto;
     margin-top: 10px;
-    text-align: left;
+    text-align: center;
   }
   .ability-grid {
     grid-template-columns: 1fr;
@@ -3192,11 +3194,10 @@ footer {
 .research-box { box-shadow: var(--shadow-card); }
 .research-box:focus-within { border-color: var(--color-primary-soft); box-shadow: var(--shadow-card-hover); }
 .followup-bar > div { box-shadow: var(--shadow-floating); }
+.hero .eyebrow { color: var(--color-warm-accent); }
 .eyebrow > span, .model-dot { background: var(--color-warm-accent); }
 .beta { color: var(--color-warm-accent-border); border-color: rgb(197 170 145 / 35%); }
 .ability-icon { color: var(--color-primary); background: var(--color-blue-50); }
-.ability-grid article:nth-child(3) .ability-icon,
-.ability-grid article:nth-child(5) .ability-icon { color: var(--color-warm-accent-dark); background: var(--color-warm-accent-light); }
 .ability-top > span, .zh-muted, .zh-example-hint, .zh-task-head small, .zh-finding-head small { color: var(--color-text-tertiary); }
 .result-title > small, .metric-row small, .library-info p,
 .history-main small, .zh-turn .history-main small { color: var(--color-text-muted); }

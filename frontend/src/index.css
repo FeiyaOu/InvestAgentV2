@@ -3263,3 +3263,35 @@ footer {
 .question-card.compact .zh-stop-button:disabled { cursor: wait; opacity: 0.65; }
 .history-status.cancelled i { background: var(--color-text-muted); }
 .history-status.cancelling i { background: var(--loading-core); }
+
+/* Row actions stay separate from navigation targets. */
+.zh-recent-row { display: grid; grid-template-columns: minmax(0, 1fr) 28px; align-items: center; gap: 4px; }
+.recent .zh-recent-open { min-width: 0; }
+.recent .zh-recent-hide { display: grid; place-items: center; width: 28px; height: 28px; padding: 4px; color: var(--color-blue-200); border-radius: 5px; }
+.recent .zh-recent-hide:hover { background: var(--color-navy-700); color: var(--color-text-on-dark); }
+.zh-history-row { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--color-divider); padding-right: 14px; }
+.zh-history-row:first-child { border-top: 0; }
+.zh-history-row > .zh-turn { flex: 1; min-width: 0; border-top: 0; }
+.zh-history-row .history-main { min-width: 0; }
+.zh-delete-button, .library-actions .zh-delete-button {
+  display: inline-grid; place-items: center; flex: none; width: 32px; height: 32px;
+  padding: 6px; border: 1px solid var(--color-border); border-radius: 6px;
+  background: var(--color-card-bg); color: var(--color-text-tertiary); cursor: pointer;
+}
+.zh-delete-button:hover:not(:disabled), .library-actions .zh-delete-button:hover:not(:disabled) {
+  color: var(--color-risk-high); border-color: var(--color-risk-high); background: var(--color-risk-high-bg);
+}
+.zh-delete-button:disabled { cursor: not-allowed; opacity: 0.4; }
+.zh-delete-button:focus-visible, .zh-recent-hide:focus-visible { outline: 2px solid var(--color-primary-soft); outline-offset: 2px; }
+@media (max-width: 600px) {
+  .zh-history-row { gap: 4px; padding-right: 8px; }
+  .zh-history-row .history-duration { display: none; }
+  .library-actions { flex-wrap: wrap; }
+}
+.zh-run-actions { display: flex; align-items: center; gap: 10px; flex: none; }
+.question-card.compact .zh-delete-button, .report-toolbar-actions .zh-delete-button {
+  border: 1px solid var(--color-border); background: var(--color-card-bg); color: var(--color-text-tertiary);
+}
+.question-card.compact .zh-delete-button:hover:not(:disabled), .report-toolbar-actions .zh-delete-button:hover:not(:disabled) {
+  border-color: var(--color-risk-high); background: var(--color-risk-high-bg); color: var(--color-risk-high);
+}

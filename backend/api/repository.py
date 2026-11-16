@@ -2,7 +2,7 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from sqlalchemy import func
+from sqlalchemy import delete, func
 from sqlmodel import Session, select
 
 from api.models import Conversation, Report, Run, RunEventRow, User, utcnow
@@ -194,3 +194,41 @@ def report_summary(report: Report) -> dict:
             "time_horizon": report.time_horizon, "report_date": report.report_date, "overall_rating": report.overall_rating,
             "status": report.status, "draft": report.draft, "validation_errors": report.validation_errors,
             "created_at": _iso(report.created_at)}
+
+
+DELETABLE_RUN_STATES = {'completed', 'failed', 'cancelled'}
+
+
+def delete_run(session: Session, run_id: str) -> None:
+    """Caller checks ownership and terminal state; delete children before parent FK."""
+    row = session.get(Run, run_id)
+    if row is None:
+        return
+    cid = row.conversation_id
+    session.exec(delete(Report).where(Report.run_id == run_id))
+    session.exec(delete(RunEventRow).where(RunEventRow.run_id == run_id))
+    session.delete(row)
+    session.flush()
+    remaining = runs_for_conversation(session, cid)
+    conversation = session.get(Conversation, cid)
+    if conversation is not None:
+        conversation.turn_count = sum(r.status in DELETABLE_RUN_STATES for r in remaining)
+        last = remaining[-1] if remaining else None
+        state = ((last.snapshot or {}).get('state') or {}) if last else {}
+        conversation.last_status = (last.status if last and last.status == 'cancelled' else
+                                    state.get('supervisor_status') or state.get('planning_status') or
+                                    (last.status if last else None))
+        conversation.title = remaining[0].query[:80] if remaining else '空对话'
+        conversation.updated_at = utcnow()
+        session.add(conversation)
+
+
+def delete_conversation(session: Session, conversation_id: str) -> None:
+    row = session.get(Conversation, conversation_id)
+    if row is None:
+        return
+    run_ids = select(Run.run_id).where(Run.conversation_id == conversation_id)
+    session.exec(delete(Report).where(Report.conversation_id == conversation_id))
+    session.exec(delete(RunEventRow).where(RunEventRow.run_id.in_(run_ids)))
+    session.exec(delete(Run).where(Run.conversation_id == conversation_id))
+    session.delete(row)

@@ -32,6 +32,10 @@ src/
 点击侧栏“登录 / 注册”进入账号模式。账号历史和报告持久保存，访客内容不自动转存。
 身份切换时清空查询缓存，当前对话按账号隔离保存；访客对话不写浏览器存储。
 
+侧栏删除按钮只隐藏“最近研究”入口；研究记录和报告中心的删除按钮会先确认再调用 DELETE API。
+删除单次研究连同事件和关联报告，但保留对话记忆；删除整个对话才清除 checkpoint。
+未结束的研究须先停止。轮次列表使用服务端返回的 run_id，删除按钮独立于导航链接。
+
 1. 首页提交 → `POST /api/runs` → 记入 session → 跳转 `/runs/:runId`。
 2. `useRun` 先 `GET /api/runs/:id` 取完整快照，未终止则用 `EventSource` 订阅 `/events?after=event_count`，
    用 `applyEvent` 按 seq 合并（规则与 backend/api/events.py 一致），收到 run_finished / run_waiting 后关闭。

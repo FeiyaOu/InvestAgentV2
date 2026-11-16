@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { downloadReport, getReport, listReports } from "../../api/client";
+import { useRecordDeletion } from "../../api/useRecordDeletion";
 import type { ReportSummary } from "../../api/types";
 import { Icon } from "../../components/Icon";
+import { DeleteButton } from "../../components/DeleteButton";
 import { Notice } from "../../components/ResultPrimitives";
 
 export const DIMENSIONS: Record<string, string> = { fundamental: "基本面", market: "市场", news: "新闻", analyst: "分析师" };
@@ -13,6 +16,8 @@ function useReports() {
 }
 
 export function ReportCenter() {
+  const { removeReport } = useRecordDeletion();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const reports = useReports();
   const navigate = useNavigate();
   const items: ReportSummary[] = reports.data ?? [];
@@ -29,6 +34,7 @@ export function ReportCenter() {
         </button>
       </div>
       {reports.error && <Notice tone="error">无法读取报告列表：{String(reports.error)}</Notice>}
+      {deleteError && <Notice tone="error">删除失败：{deleteError}</Notice>}
       {reports.isSuccess && items.length === 0 && (
         <Notice>还没有报告。在首页提出“生成 XX 行业投研报告”的请求，完成后会出现在这里。</Notice>
       )}
@@ -55,6 +61,9 @@ export function ReportCenter() {
               <button aria-label="下载 HTML" title="下载 HTML" onClick={() => void downloadReport(entry.id, "html")}>
                 <Icon name="file" size={15} />
               </button>
+              <DeleteButton label={`删除报告：${entry.title || entry.question}`}
+                message="从报告库删除这份报告？此操作无法撤销，原研究记录保留。"
+                onError={setDeleteError} onDelete={async () => { setDeleteError(null); await removeReport(entry.id); }} />
             </div>
           </article>
         ))}
@@ -65,6 +74,8 @@ export function ReportCenter() {
 }
 
 export function ReportReader() {
+  const { removeReport } = useRecordDeletion();
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const { runId, taskId } = useParams();
   const navigate = useNavigate();
   const reports = useReports();
@@ -123,10 +134,13 @@ export function ReportReader() {
           <button onClick={() => void downloadReport(entry.id, "html")}>
             <Icon name="download" size={16} /> HTML
           </button>
+          <DeleteButton label="删除这份报告" message="从报告库删除这份报告？原研究记录保留，此操作无法撤销。"
+            onError={setDeleteError} onDelete={async () => { await removeReport(entry.id); navigate("/reports"); }} />
         </div>
       </div>
       <div className="report-reader">
         <aside className="report-outline">
+          {deleteError && <Notice tone="error">删除失败：{deleteError}</Notice>}
           <span>报告目录</span>
           {chapters.map((item, i) => (
             <a key={item} href={`#chapter-${i}`}>

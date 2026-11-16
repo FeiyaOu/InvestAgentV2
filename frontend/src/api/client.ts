@@ -34,7 +34,7 @@ async function request<T>(path: string, init?: RequestInit, { auth = true }: { a
     if (response.status === 401 && auth && token === getToken()) onUnauthorized();
     throw new ApiError(response.status, detail);
   }
-  return (await response.json()) as T;
+  return response.status === 204 ? undefined as T : (await response.json()) as T;
 }
 
 // ---- auth ----
@@ -84,6 +84,10 @@ export function listRuns(limit = 50) {
 export function getRun(runId: string) {
   return request<RunSnapshot>(`/runs/${runId}`);
 }
+
+export const deleteRun = (runId: string) => request<void>(`/runs/${runId}`, { method: "DELETE" });
+export const deleteConversation = (id: string) => request<void>(`/conversations/${id}`, { method: "DELETE" });
+export const deleteReport = (id: string) => request<void>(`/reports/${id}`, { method: "DELETE" });
 
 export function listEvents(runId: string, after = 0) {
   return request<RunEvent[]>(`/runs/${runId}/events/list?after=${after}`);

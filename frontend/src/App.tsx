@@ -10,6 +10,7 @@ import { ReportCenter, ReportReader } from "./features/reports/ReportCenter";
 import { RunPage } from "./features/research/RunPage";
 import { useAuth } from "./state/auth";
 import { useSession } from "./state/session";
+import { hideRecent, readHiddenRecent } from "./state/recentVisibility";
 
 const NAV: { name: string; to: string; icon: IconName }[] = [
   { name: "当前对话", to: "/", icon: "chat" },
@@ -40,7 +41,10 @@ function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; di
   const queryClient = useQueryClient();
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const recent = useQuery({ queryKey: ["runs", "recent"], queryFn: () => listRuns(5), staleTime: 10_000, enabled: Boolean(user) });
+  const recentOwner = guest ? null : user!.id;
+  const [hiddenRecent, setHiddenRecent] = useState(() => readHiddenRecent(recentOwner));
+  const recent = useQuery({ queryKey: ["runs", "recent"], queryFn: () => listRuns(50), staleTime: 10_000, enabled: Boolean(user) });
+  const visibleRecent = (recent.data ?? []).filter((run) => !hiddenRecent.includes(run.run_id)).slice(0, 5);
 
   const submit = async (query: string) => {
     if (submitting) return;
@@ -97,12 +101,19 @@ function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; di
 
         <div className="recent">
           <div className="section-label">最近研究</div>
-          {recent.data?.length === 0 && <p className="zh-muted zh-recent-empty">还没有研究记录</p>}
-          {recent.data?.map((run) => (
-            <button key={run.run_id} onClick={() => navigate(`/runs/${run.run_id}`)} title={run.query}>
+          {recent.isSuccess && visibleRecent.length === 0 && <p className="zh-muted zh-recent-empty">暂无最近研究</p>}
+          {visibleRecent.map((run) => (
+            <div className="zh-recent-row" key={run.run_id}>
+            <button className="zh-recent-open" onClick={() => navigate(`/runs/${run.run_id}`)} title={run.query}>
               <span>{run.query}</span>
               <small>{new Date(run.created_at).toLocaleDateString("zh-CN", { month: "numeric", day: "numeric" })}</small>
             </button>
+            <button type="button" className="zh-recent-hide" aria-label={`从最近研究移除：${run.query}`}
+              title="从最近研究移除，保留历史和报告"
+              onClick={() => setHiddenRecent((ids) => hideRecent(ids, run.run_id, recentOwner))}>
+              <Icon name="trash" size={14} />
+            </button>
+            </div>
           ))}
         </div>
 

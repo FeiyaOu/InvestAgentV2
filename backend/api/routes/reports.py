@@ -12,6 +12,16 @@ from services.report_export import export_bundle
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 
+@router.delete('/{report_id}', status_code=204)
+def delete_report(report_id: str, request: Request, user: CurrentUser = Depends(current_user)):
+    with session_scope(request_engine(request)) as session:
+        report = repository.report_for_user(session, report_id, user.id)
+        if report is None:
+            raise HTTPException(status_code=404, detail='report not found')
+        session.delete(report)
+    return Response(status_code=204)
+
+
 @router.get("")
 def list_reports(request: Request, user: CurrentUser = Depends(current_user)):
     with session_scope(request_engine(request)) as session:

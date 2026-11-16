@@ -55,7 +55,7 @@ failed（`service_restarted`），因为同步图无法跨进程续跑；checkpo
 POST /api/auth/register | login        GET /api/auth/me
 GET  /api/runs?limit=                  当前用户最近的 run（不含 snapshot）
 GET  /api/conversations                当前用户对话列表（title、turn_count、run_count、last_status）
-GET  /api/conversations/{id}           + title/turn_count；turns 仍来自 checkpointer
+GET  /api/conversations/{id}           + title/turn_count；展示轮次来自已结束的研究记录，包含 run_id
 GET  /api/reports                      报告库
 GET  /api/reports/{id}                 含完整 report JSON
 GET  /api/reports/{id}/download?format=md|html   services/report_export 生成，草稿文件名带 -draft
@@ -64,6 +64,18 @@ GET  /api/reports/{id}/download?format=md|html   services/report_export 生成�
 `services/report_export.py` 是报告 Markdown/HTML 导出的唯一实现，Streamlit 的 report_viewer 改为引用。
 
 ## 前端
+
+### 删除和侧栏隐藏（2026-11-16）
+
+- 侧栏“最近研究”的移除只隐藏入口，不删除研究或报告；按账号保存在当前浏览器，访客仅当前页面内存。
+- `DELETE /api/reports/{id}` 删除报告库条目，保留原研究记录及其原始结果。
+- `DELETE /api/runs/{id}` 删除单次研究、事件和关联报告，并更新对话列表统计；
+  不改写已汇总的模型记忆。确认框明确提示：清除记忆需删除整个对话。
+- `DELETE /api/conversations/{id}` 删除整个对话、全部研究/事件/报告和该线程的全部 checkpoint。
+- 所有实际删除均校验归属，非本人资源返回 404；只允许删除 completed/failed/cancelled 的研究。
+  queued/running/cancelling/waiting_input 需先停止，后端返回 409 防止并发写回。
+- 实际删除有确认和错误反馈，按钮与导航链接分离，完成后刷新列表和统计；访客使用相同规则。
+- 展示轮次改由尚存在的研究快照构建，附稳定 run_id；删除的研究不会从 checkpoint 的旧摘要重新出现在历史列表。
 
 登录页（注册/登录切换）；token 存 localStorage，任何 401 自动登出。会话仅记住“当前对话 id”，
 对话列表、最近研究、报告库全部来自服务端；报告下载走后端接口。

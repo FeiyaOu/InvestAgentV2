@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useRun } from "../../api/useRun";
+import { canDeleteRun, DELETE_RUN_MESSAGE, useRecordDeletion } from "../../api/useRecordDeletion";
 import { CATEGORY_LABELS, TERMINAL, buildSteps, evidenceCount, runHeadline, type ProgressStep } from "../../api/runView";
 import type { RunSnapshot, TaskCategory } from "../../api/types";
 import { Icon } from "../../components/Icon";
+import { DeleteButton } from "../../components/DeleteButton";
 import { Markdown } from "../../components/Markdown";
 import { Notice, SectionTitle } from "../../components/ResultPrimitives";
 import { AnalyticsPanel } from "./panels/AnalyticsPanel";
@@ -211,6 +213,8 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
   const [followUp, setFollowUp] = useState("");
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { removeRun } = useRecordDeletion();
 
   if (error) {
     return (
@@ -255,6 +259,7 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
             <span>你的问题</span>
             <h1>{snapshot.query}</h1>
           </div>
+          <div className="zh-run-actions">
           {(running || waiting) && (
             <button className="zh-stop-button" disabled={stopping || snapshot.status === "cancelling"}
               onClick={async () => {
@@ -267,8 +272,13 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
               {stopping || snapshot.status === "cancelling" ? "正在停止…" : "停止研究"}
             </button>
           )}
+          <DeleteButton label="删除这次研究" message={DELETE_RUN_MESSAGE}
+            disabled={!canDeleteRun(snapshot.status)} onError={setDeleteError}
+            onDelete={async () => { setDeleteError(null); await removeRun(snapshot.run_id); navigate("/"); }} />
+          </div>
         </div>
         {stopError && <Notice tone="error">停止失败：{stopError}</Notice>}
+        {deleteError && <Notice tone="error">删除失败：{deleteError}</Notice>}
         {running && <ProgressPanel snapshot={snapshot} elapsed={elapsed} />}
         {waiting && <ClarificationCard snapshot={snapshot} onResume={resume} />}
         {(showAnswer || partialResults) && <Answer snapshot={snapshot} elapsed={elapsed} />}

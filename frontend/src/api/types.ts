@@ -226,6 +226,7 @@ export interface RunEvent {
 }
 
 export interface ConversationTurn {
+  run_id: string;
   query: string;
   response_preview: string;
   status: string;

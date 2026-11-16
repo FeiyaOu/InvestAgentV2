@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { getConversation, listConversations, listRuns } from "../../api/client";
+import { canDeleteRun, DELETE_RUN_MESSAGE, useRecordDeletion } from "../../api/useRecordDeletion";
+import { DeleteButton } from "../../components/DeleteButton";
 import { Icon } from "../../components/Icon";
 import { Notice } from "../../components/ResultPrimitives";
 import { useSession } from "../../state/session";
@@ -21,6 +23,8 @@ const STATUS: Record<string, string> = {
 export function HistoryPage() {
   const { conversationId, setConversationId } = useSession();
   const [search, setSearch] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const { removeRun, removeConversation } = useRecordDeletion();
   const conversations = useQuery({ queryKey: ["conversations"], queryFn: listConversations, staleTime: 10_000 });
   const runs = useQuery({ queryKey: ["runs", "all"], queryFn: () => listRuns(200), staleTime: 10_000 });
   const current = useQuery({
@@ -46,6 +50,7 @@ export function HistoryPage() {
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="搜索研究记录" />
         </label>
       </div>
+      {deleteError && <Notice tone="error">删除失败：{deleteError}</Notice>}
       <div className="history-summary">
         <div>
           <strong>{conversations.data?.length ?? 0}</strong>
@@ -69,8 +74,8 @@ export function HistoryPage() {
         {conversations.error && <Notice tone="error">无法读取对话：{String(conversations.error)}</Notice>}
         <div className="history-list">
           {visibleConversations.map((c) => (
+            <div className="zh-history-row" key={c.conversation_id}>
             <button
-              key={c.conversation_id}
               className={`zh-turn zh-turn-button ${c.conversation_id === conversationId ? "active" : ""}`}
               onClick={() => setConversationId(c.conversation_id)}
               title="设为当前对话"
@@ -89,6 +94,15 @@ export function HistoryPage() {
                 {c.conversation_id === conversationId ? "当前对话" : STATUS[c.last_status ?? ""] ?? ""}
               </span>
             </button>
+            <DeleteButton label={`删除对话：${c.title || c.conversation_id}`}
+              message="删除整个对话及其全部研究记录、报告和对话记忆？此操作无法撤销。"
+              disabled={(runs.data ?? []).some((run) => run.conversation_id === c.conversation_id && !canDeleteRun(run.status))}
+              onError={setDeleteError} onDelete={async () => {
+                setDeleteError(null);
+                await removeConversation(c.conversation_id);
+                if (conversationId === c.conversation_id) setConversationId(null);
+              }} />
+            </div>
           ))}
           {conversations.isSuccess && visibleConversations.length === 0 && <p className="zh-muted">暂无对话。</p>}
         </div>
@@ -118,6 +132,8 @@ export function HistoryPage() {
                     <i></i>
                     {STATUS[turn.status] ?? turn.status}
                   </span>
+                  <DeleteButton label={`删除研究：${turn.query}`} message={DELETE_RUN_MESSAGE}
+                    onError={setDeleteError} onDelete={async () => { setDeleteError(null); await removeRun(turn.run_id); }} />
                 </div>
               ))}
           </div>
@@ -131,7 +147,8 @@ export function HistoryPage() {
         </div>
         <div className="history-list">
           {visibleRuns.map((run) => (
-            <Link to={`/runs/${run.run_id}`} key={run.run_id} className="zh-turn">
+            <div className="zh-history-row" key={run.run_id}>
+            <Link to={`/runs/${run.run_id}`} className="zh-turn">
               <span className="history-icon">
                 <Icon name="search" size={18} />
               </span>
@@ -148,6 +165,10 @@ export function HistoryPage() {
               </span>
               <Icon name="arrow" size={15} />
             </Link>
+            <DeleteButton label={`删除研究：${run.query}`} message={DELETE_RUN_MESSAGE}
+              disabled={!canDeleteRun(run.status)} onError={setDeleteError}
+              onDelete={async () => { setDeleteError(null); await removeRun(run.run_id); }} />
+            </div>
           ))}
           {runs.isSuccess && visibleRuns.length === 0 && <p className="zh-muted">暂无记录。</p>}
         </div>

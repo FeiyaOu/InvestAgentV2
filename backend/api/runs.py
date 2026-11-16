@@ -107,8 +107,13 @@ class RunStore:
         self.engine = engine
         self._live: dict[str, RunRecord] = {}
         self._lock = threading.Lock()
+        self.management_lock = threading.RLock()
 
     def create(self, *, query: str, conversation_id: str | None, user_id: str) -> RunRecord:
+        with self.management_lock:
+            return self._create(query=query, conversation_id=conversation_id, user_id=user_id)
+
+    def _create(self, *, query: str, conversation_id: str | None, user_id: str) -> RunRecord:
         with session_scope(self.engine) as session:
             conversation = repository.ensure_conversation(session, conversation_id=conversation_id, user_id=user_id,
                                                           title_hint=query)
@@ -192,7 +197,7 @@ class RunManager:
         return record
 
     def resume(self, record: RunRecord, answer: str) -> RunRecord:
-        with record.lifecycle_lock:
+        with self.store.management_lock, record.lifecycle_lock:
             return self._resume(record, answer)
 
     def _resume(self, record: RunRecord, answer: str) -> RunRecord:

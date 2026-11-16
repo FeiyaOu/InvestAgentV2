@@ -44,8 +44,6 @@ export function LoginPage() {
           <span className="beta">BETA</span>
         </div>
         <h1>{mode === "login" ? "登录工作区" : "创建账号"}</h1>
-        <p className="zh-muted">研究记录、对话与报告按账号保存。</p>
-        <p className="zh-muted">当前访客内容不会自动转存到账号。</p>
         <label>
           邮箱
           <input type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />

@@ -2,7 +2,7 @@
 import asyncio
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
 
 from api.deps import (
@@ -44,6 +44,25 @@ def list_runs(request: Request, user: CurrentUser = Depends(current_user), limit
 @router.get("/{run_id}")
 def get_run(record: RunRecord = Depends(owned_run)):
     return record.snapshot()
+
+
+@router.delete('/{run_id}', status_code=204)
+def delete_run(request: Request, record: RunRecord = Depends(owned_run)):
+    from api import repository
+    from api.db import session_scope
+
+    store = _manager(request).store
+    with store.management_lock, record.lifecycle_lock:
+        with session_scope(store.engine) as session:
+            row = repository.load_run(session, record.run_id)
+            if row is None:
+                raise HTTPException(status_code=404, detail='run not found')
+            if row.status not in repository.DELETABLE_RUN_STATES:
+                raise HTTPException(status_code=409, detail='请先停止研究，再删除记录。')
+            repository.delete_run(session, record.run_id)
+        with store._lock:
+            store._live.pop(record.run_id, None)
+    return Response(status_code=204)
 
 
 @router.get("/{run_id}/events/list")

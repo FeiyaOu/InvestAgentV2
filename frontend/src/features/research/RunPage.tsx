@@ -47,7 +47,7 @@ function ProgressPanel({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
             <span>{step.state === "active" ? <i></i> : index + 1}</span>
             <b>{step.label}</b>
             <small className="zh-step-detail">{step.detail}</small>
-            <small>{STATE_TEXT[step.state]}</small>
+            <small className="zh-step-status">{STATE_TEXT[step.state]}</small>
           </div>
         ))}
       </div>

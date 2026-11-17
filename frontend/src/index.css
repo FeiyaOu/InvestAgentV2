@@ -3311,3 +3311,15 @@ footer {
 .recent .zh-delete-button:hover:not(:disabled) {
   background: var(--color-navy-700); color: var(--color-text-on-dark);
 }
+
+/* Quiet directional controls for the research question catalogue. */
+.zh-example-pagination { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; color: var(--color-text-tertiary); font-size: 13.2px; }
+.zh-example-pagination nav { display: flex; align-items: center; gap: 12px; }
+.zh-example-pagination nav > span { min-width: 38px; text-align: center; font-variant-numeric: tabular-nums; }
+.zh-example-pagination button { display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 1px solid var(--color-border-strong); border-radius: 50%; background: var(--color-card-bg); color: var(--color-primary); cursor: pointer; transition: background .18s, border-color .18s; }
+.zh-example-pagination button:hover:not(:disabled) { background: var(--color-blue-50); border-color: var(--color-primary-soft); }
+.zh-example-pagination button:focus-visible { outline: 2px solid var(--color-primary-soft); outline-offset: 3px; }
+.zh-example-pagination button:disabled { opacity: .35; cursor: default; }
+.zh-example-prev, .zh-example-next { display: flex; }
+.zh-example-prev { transform: rotate(90deg); }
+.zh-example-next { transform: rotate(-90deg); }

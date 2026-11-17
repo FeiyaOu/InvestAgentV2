@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Icon, type IconName } from "../../components/Icon";
 
-/** Mirrors backend app/example_queries.py: every card is a journey the current specialists support. */
-function examples(today: string) {
+/** Curated examples for the tools currently registered by the specialists. */
+export function examples(today: string) {
   return [
     { title: "查最新估值", hint: "一次查询 · 两只股票", query: "茅台和五粮液最新的PE TTM与PB是多少？" },
     { title: "看历史表现", hint: "价格采集 + 指标与曲线", query: "分析贵州茅台过去一年的收益、波动率和最大回撤，并展示累计收益和回撤曲线。" },
@@ -14,6 +14,16 @@ function examples(today: string) {
       query: `测试假设组合：持仓日期为${today}，人民币：茅台60%、五粮液30%、现金10%，单股上限50%。检查限制，并计算两只股票分别下跌20%和10%时的组合收益，不查询行情。`,
     },
     { title: "生成行业报告", hint: "完整报告流程 · 阅读与下载", query: "请生成新能源行业未来一年的投研报告，重点关注光伏。" },
+    { title: "解读技术指标", hint: "动量 · RSI · MACD · 布林带", query: "分析贵州茅台过去一年的20日动量、均线偏离、14日RSI、MACD和布林带位置，展示指标变化。只描述历史状态，不给出买卖信号。" },
+    { title: "看成交与换手", hint: "成交量变化 · 平均换手率", query: "查询宁德时代过去一年的日线数据，计算最新成交量相对20日均量的比值和20日平均换手率，注明日期与缺失数据。" },
+    { title: "比较同行因子", hint: "五家公司 · 样本内百分位", query: "比较贵州茅台、五粮液、泸州老窖、山西汾酒、洋河股份的最新PE TTM、PB和20日动量，展示各因子的样本内百分位与标准分，不做综合评分或荐股排名。" },
+    { title: "分析资产相关性", hint: "共同交易日 · 相关性与协方差", query: "计算贵州茅台、宁德时代和沪深300过去一年的日收益相关系数、年化协方差，说明哪些历史走势更接近，并注明共同交易日样本数。" },
+    { title: "评估组合风险", hint: "波动与回撤 · VaR / CVaR", query: `测试假设组合：持仓日期为${today}，人民币：贵州茅台40%、五粮液30%、现金30%。用过去两年数据计算组合年化波动率、最大回撤，以及95%和99%的单日VaR与CVaR，说明恒定权重回放假设。` },
+    { title: "重演历史冲击", hint: "2020年疫情 · 历史情景回放", query: `测试假设组合：持仓日期为${today}，人民币：贵州茅台40%、五粮液40%、现金20%。重演2020年疫情冲击情景期间的表现，并与沪深300比较；缺少覆盖数据时明确说明，不使用替代标的。` },
+    { title: "检查组合风险上限", hint: "组合波动率 · 最大回撤约束", query: `测试假设组合：持仓日期为${today}，人民币：贵州茅台40%、五粮液40%、现金20%。检查过去一年组合年化波动率是否超过20%、最大回撤是否超过15%，不要用单股风险代替组合风险。` },
+    { title: "查看行业行情", hint: "板块涨跌 · 成交与资金流", query: "查询半导体板块近期涨跌幅、成交额和资金净流入，注明来源和数据时间，不生成完整报告。" },
+    { title: "了解宏观与市场", hint: "主要A股指数 · 宏观指标", query: "查询主要A股指数和可获取的最新宏观指标，分别注明数据时间，区分最新可用数据与实时行情，不生成完整报告。" },
+    { title: "梳理主题新闻", hint: "光伏主题 · 近期事件梳理", query: "查询光伏相关近期新闻，整理主要事件和可能影响，注明可获取的来源和时间，区分事实与推测，不生成完整报告。" },
   ];
 }
 
@@ -28,12 +38,15 @@ const abilities: { icon: IconName; title: string; text: string; tag: string }[] 
 export function HomeView({ onRun, busy, initialQuery }: { onRun: (query: string) => void; busy: boolean; initialQuery?: string }) {
   const [query, setQuery] = useState(initialQuery ?? "");
   const [showExamples, setShowExamples] = useState(true);
+  const [examplePage, setExamplePage] = useState(0);
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
     return hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好";
   }, []);
   const today = useMemo(() => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date()), []);
   const cards = useMemo(() => examples(today), [today]);
+  const pageCount = Math.ceil(cards.length / 6);
+  const visibleCards = cards.slice(examplePage * 6, (examplePage + 1) * 6);
   const canRun = query.trim().length > 0 && !busy;
 
   return (
@@ -81,10 +94,11 @@ export function HomeView({ onRun, busy, initialQuery }: { onRun: (query: string)
           </span>
         </button>
         {showExamples && (
-          <div className="example-grid">
-            {cards.map((example, index) => (
+          <div>
+          <div className="example-grid" key={examplePage} id="research-examples">
+            {visibleCards.map((example, index) => (
               <button key={example.title} onClick={() => setQuery(example.query)} title={example.hint}>
-                <span className="example-index">0{index + 1}</span>
+                <span className="example-index">{String(examplePage * 6 + index + 1).padStart(2, "0")}</span>
                 <span>
                   <b className="zh-example-title">{example.title}</b>
                   <span className="zh-example-hint">{example.hint}</span>
@@ -92,6 +106,17 @@ export function HomeView({ onRun, busy, initialQuery }: { onRun: (query: string)
                 <Icon name="arrow" size={16} />
               </button>
             ))}
+          </div>
+          <div className="zh-example-pagination">
+            <span>探索更多研究问题</span>
+            <nav aria-label="示例问题翻页">
+              <button type="button" aria-label="上一页问题" aria-controls="research-examples" disabled={examplePage === 0}
+                onClick={() => setExamplePage((page) => page - 1)}><span className="zh-example-prev"><Icon name="chevron" size={17} /></span></button>
+              <span aria-live="polite" aria-atomic="true">{examplePage + 1} / {pageCount}</span>
+              <button type="button" aria-label="下一页问题" aria-controls="research-examples" disabled={examplePage === pageCount - 1}
+                onClick={() => setExamplePage((page) => page + 1)}><span className="zh-example-next"><Icon name="chevron" size={17} /></span></button>
+            </nav>
+          </div>
           </div>
         )}
       </section>

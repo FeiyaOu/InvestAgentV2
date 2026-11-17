@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { cancelRun, resumeRun as resumeRunRequest } from "./client";
 import { watchRun } from "./runStream";
 import { TERMINAL } from "./runView";
@@ -14,8 +14,10 @@ export interface UseRunResult {
 }
 
 /** Fetch the run snapshot, then follow its SSE stream until it finishes or waits for input. */
-export function useRun(runId: string | undefined): UseRunResult {
-  const [snapshot, setSnapshot] = useState<RunSnapshot | null>(null);
+export function useRun(runId: string | undefined, initialSnapshot?: RunSnapshot): UseRunResult {
+  const [snapshot, setSnapshot] = useState<RunSnapshot | null>(initialSnapshot ?? null);
+  const initial = useRef(initialSnapshot);
+  initial.current = initialSnapshot;
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
@@ -25,7 +27,7 @@ export function useRun(runId: string | undefined): UseRunResult {
     if (!runId) return;
     setLoading(true);
     setError(null);
-    setSnapshot(null);
+    setSnapshot((current) => current?.run_id === runId ? current : initial.current ?? null);
     return watchRun(runId, {
       onSnapshot: (fresh) => { setSnapshot(fresh); setLoading(false); setError(null); },
       onError: (err) => { setError(err.message); setLoading(false); },
@@ -62,5 +64,5 @@ export function useRun(runId: string | undefined): UseRunResult {
     return Math.max(0, Math.round((Date.now() - new Date(snapshot.started_at).getTime()) / 1000));
   })();
 
-  return { snapshot, loading, error, elapsed, resume, cancel };
+  return { snapshot, loading: loading && !snapshot, error, elapsed, resume, cancel };
 }

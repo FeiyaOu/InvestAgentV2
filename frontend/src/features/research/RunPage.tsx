@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRun } from "../../api/useRun";
 import { canDeleteRun, DELETE_RUN_MESSAGE, useRecordDeletion } from "../../api/useRecordDeletion";
-import { CATEGORY_LABELS, TERMINAL, buildSteps, evidenceCount, runHeadline, type ProgressStep } from "../../api/runView";
+import { CATEGORY_LABELS, TERMINAL, emptySnapshot, buildSteps, evidenceCount, runHeadline, type ProgressStep } from "../../api/runView";
 import type { RunSnapshot, TaskCategory } from "../../api/types";
 import { Icon } from "../../components/Icon";
 import { DeleteButton } from "../../components/DeleteButton";
@@ -215,9 +215,9 @@ export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
   );
 }
 
-export function ResearchTurn({ runId, conversationId }: { runId: string; conversationId: string }) {
+export function ResearchTurn({ runId, conversationId, initialSnapshot }: { runId: string; conversationId: string; initialSnapshot?: RunSnapshot }) {
   const navigate = useNavigate();
-  const { snapshot, loading, error, elapsed, resume, cancel } = useRun(runId);
+  const { snapshot, loading, error, elapsed, resume, cancel } = useRun(runId, initialSnapshot ? { ...emptySnapshot(runId, conversationId, initialSnapshot.query), ...initialSnapshot } : undefined);
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);

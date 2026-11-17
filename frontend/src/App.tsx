@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { createRun, listConversations } from "./api/client";
+import { seedSubmittedRun } from "./api/submittedRun";
 import { Icon, type IconName } from "./components/Icon";
 import { LoginPage } from "./features/auth/LoginPage";
 import { HistoryPage } from "./features/history/HistoryPage";
@@ -53,6 +54,8 @@ function Workbench({ userEmail, displayName, onLogout }: { userEmail: string; di
     try {
       if (guest) await ensureGuest();
       const created = await createRun(query, targetConversationId);
+      await queryClient.cancelQueries({ queryKey: ["conversation", created.conversation_id] });
+      seedSubmittedRun(queryClient, created, query);
       setConversationId(created.conversation_id);
       void queryClient.invalidateQueries({ queryKey: ["runs"] });
       void queryClient.invalidateQueries({ queryKey: ["conversations"] });

@@ -125,6 +125,15 @@ const RESULT_STATES: Record<string, ProgressStep["state"]> = {
 export function buildSteps(snapshot: RunSnapshot): ProgressStep[] {
   const state = snapshot.state;
   const planning = state.planning_status;
+  if (state.followup_route === "direct_answer") {
+    return [
+      { label: "理解追问", detail: "已有信息足够，无需重新研究", state: "done" },
+      { label: "解读已有结果", detail: "基于已有研究解释、总结或改写", state: state.final_response ? "done" : "active" },
+    ];
+  }
+  if (state.followup_route === "routing" && !state.planning_status) {
+    return [{ label: "理解问题", detail: "判断是否需要新研究", state: "active" }];
+  }
   const attempt = Math.max(1, ...snapshot.planner_attempts.map((a) => Number(a.attempt ?? 1)));
   let planState: ProgressStep["state"];
   let detail: string;

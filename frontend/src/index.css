@@ -3296,3 +3296,18 @@ footer {
 .question-card.compact .zh-delete-button:hover:not(:disabled), .report-toolbar-actions .zh-delete-button:hover:not(:disabled) {
   border-color: var(--color-risk-high); background: var(--color-risk-high-bg); color: var(--color-risk-high);
 }
+
+/* One continuous conversation, with separate actions and results for each turn. */
+.zh-conversation-message { scroll-margin-top: 30px; }
+.zh-conversation-message + .zh-conversation-message {
+  margin-top: 56px;
+  padding-top: 36px;
+  border-top: 1px solid var(--color-border);
+}
+.recent .zh-delete-button {
+  width: 28px; height: 28px; padding: 4px;
+  border: 0; background: transparent; color: var(--color-blue-200);
+}
+.recent .zh-delete-button:hover:not(:disabled) {
+  background: var(--color-navy-700); color: var(--color-text-on-dark);
+}

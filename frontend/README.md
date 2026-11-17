@@ -21,9 +21,9 @@ src/
   features/
     auth/       登录/注册页
     home/       首页：输入框、示例卡片（与 backend/app/example_queries.py 一致）、能力介绍
-    research/   RunPage：进度面板、澄清卡片、Answer（核心结论 + 按 category 分发的四类任务面板）
+    research/   ConversationPage：连续对话；RunPage 中 ResearchTurn：每轮进度、澄清卡片、Answer（核心结论 + 按 category 分发的四类任务面板）
     reports/    报告中心与阅读页：GET /api/reports，下载走 /api/reports/{id}/download
-    history/    研究记录：对话列表（可切换当前对话）、当前对话轮次、全部研究任务
+    history/    研究记录：按对话聚合，打开后查看各轮内容并继续追问
 ```
 
 ## 数据流
@@ -32,12 +32,14 @@ src/
 点击侧栏“登录 / 注册”进入账号模式。账号历史和报告持久保存，访客内容不自动转存。
 身份切换时清空查询缓存，当前对话按账号隔离保存；访客对话不写浏览器存储。
 
-侧栏删除按钮只隐藏“最近研究”入口；研究记录和报告中心的删除按钮会先确认再调用 DELETE API。
+侧栏和研究记录每个对话只显示一条，删除会确认并删除整个对话；对话页每轮按钮只删除该轮。
+报告中心删除只移除报告库条目。
 删除单次研究连同事件和关联报告，但保留对话记忆；删除整个对话才清除 checkpoint。
 未结束的研究须先停止。轮次列表使用服务端返回的 run_id，删除按钮独立于导航链接。
 
-1. 首页提交 → `POST /api/runs` → 记入 session → 跳转 `/runs/:runId`。
-2. `useRun` 先 `GET /api/runs/:id` 取完整快照，未终止则用 `EventSource` 订阅 `/events?after=event_count`，
+1. 首页提交 → `POST /api/runs` → 记入 session → 打开 `/conversations/:conversationId`；追问留在同一 URL，追加新一轮。
+   旧 `/runs/:runId` 链接会自动定位到所属对话的对应轮次。
+2. 对话页通过 `GET /api/conversations/:id` 加载全部轮次；每轮 `useRun` 先 `GET /api/runs/:id` 取完整快照，未终止则用 `EventSource` 订阅 `/events?after=event_count`，
    用 `applyEvent` 按 seq 合并（规则与 backend/api/events.py 一致），收到 run_finished / run_waiting 后关闭。
 3. `waiting_input` 时显示澄清卡片，`POST /resume` 后重新订阅。
    运行、排队或等待补充时可点“停止研究”：`POST /cancel`，显示 cancelling → cancelled。

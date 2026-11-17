@@ -16,3 +16,15 @@ it("shows the workbench homepage before any login or guest API request completes
   expect(html).toContain("访客");
   expect(html).not.toContain("登录工作区");
 });
+
+it("shows one recent entry for a conversation with multiple research turns", () => {
+  const client = new QueryClient();
+  client.setQueryData(["conversations"], [{ conversation_id: "c1", title: "连续讨论茅台五粮液", run_count: 2,
+    turn_count: 2, last_status: "completed", updated_at: "2026-11-17T08:00:00Z", created_at: "2026-11-17T07:00:00Z" }]);
+  const html = renderToStaticMarkup(<QueryClientProvider client={client}><SessionProvider>
+    <MemoryRouter><App /></MemoryRouter>
+  </SessionProvider></QueryClientProvider>);
+  expect(html.match(/class="zh-recent-row"/g)).toHaveLength(1);
+  expect(html).toContain("删除对话：连续讨论茅台五粮液");
+  expect(html).not.toContain("从最近研究移除");
+});

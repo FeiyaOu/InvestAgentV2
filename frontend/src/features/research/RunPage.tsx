@@ -1,5 +1,6 @@
-import { useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRun } from "../../api/useRun";
 import { canDeleteRun, DELETE_RUN_MESSAGE, useRecordDeletion } from "../../api/useRecordDeletion";
 import { CATEGORY_LABELS, TERMINAL, buildSteps, evidenceCount, runHeadline, type ProgressStep } from "../../api/runView";
@@ -206,15 +207,19 @@ export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
   );
 }
 
-export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string) => void; submitting: boolean }) {
-  const { runId } = useParams();
+export function ResearchTurn({ runId, conversationId }: { runId: string; conversationId: string }) {
   const navigate = useNavigate();
   const { snapshot, loading, error, elapsed, resume, cancel } = useRun(runId);
-  const [followUp, setFollowUp] = useState("");
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const { removeRun } = useRecordDeletion();
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    if (!snapshot || !TERMINAL.includes(snapshot.status)) return;
+    void queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
+    void queryClient.invalidateQueries({ queryKey: ["conversations"] });
+  }, [snapshot?.status, conversationId, queryClient]);
 
   if (error) {
     return (
@@ -247,13 +252,8 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
   const partialResults = running && planned.length > 0 && Object.keys(snapshot.state.task_results ?? {}).length > 0;
 
   return (
-    <div className="result-content">
-      <div className="result-wrap">
-        <div className="result-breadcrumb">
-          <span>当前对话</span>
-          <b>/</b>
-          <span>{snapshot.conversation_id}</span>
-        </div>
+    <article className="zh-conversation-turn">
+      <div>
         <div className="question-card compact">
           <div>
             <span>你的问题</span>
@@ -274,7 +274,7 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
           )}
           <DeleteButton label="删除这次研究" message={DELETE_RUN_MESSAGE}
             disabled={!canDeleteRun(snapshot.status)} onError={setDeleteError}
-            onDelete={async () => { setDeleteError(null); await removeRun(snapshot.run_id); navigate("/"); }} />
+            onDelete={async () => { setDeleteError(null); await removeRun(snapshot.run_id); }} />
           </div>
         </div>
         {stopError && <Notice tone="error">停止失败：{stopError}</Notice>}
@@ -283,35 +283,6 @@ export function RunPage({ onFollowUp, submitting }: { onFollowUp: (query: string
         {waiting && <ClarificationCard snapshot={snapshot} onResume={resume} />}
         {(showAnswer || partialResults) && <Answer snapshot={snapshot} elapsed={elapsed} />}
       </div>
-      {showAnswer && (
-        <div className="followup-bar">
-          <div>
-            <Icon name="spark" size={16} />
-            <input
-              aria-label="继续追问"
-              value={followUp}
-              placeholder="基于以上结果继续追问…"
-              onChange={(event) => setFollowUp(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && followUp.trim() && !submitting) {
-                  onFollowUp(followUp.trim());
-                  setFollowUp("");
-                }
-              }}
-            />
-            <span>同一对话 · 最近 3 轮进入上下文</span>
-            <button
-              disabled={!followUp.trim() || submitting}
-              onClick={() => {
-                onFollowUp(followUp.trim());
-                setFollowUp("");
-              }}
-            >
-              <Icon name="send" size={15} />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
+    </article>
   );
 }

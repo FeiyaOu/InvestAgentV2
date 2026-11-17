@@ -69,5 +69,5 @@ python linters/check_agent_structure.py       # 结构 lint 检查
 - 依赖方向：`core / data ← specialists ← orchestration ← agent.py ← services ← api / app`；api 与 app 互不依赖；specialists 不 import orchestration
 - AKShare 只在 `src/data/tools.py` 与离线刷新脚本 `scripts/refresh_security_directory.py` 中调用，节点模块不直接调用 AKShare
 - 证券代码→简称核对只读仓库快照 `src/data/a_share_directory.json`，请求路径不联网拉代码表；需要时运行刷新脚本更新
-- LLM 调用只在节点模块中发生：`orchestration/planner.py`、`composer.py`、`history.py`、`specialists/*/nodes.py`、`specialists/report/stages/`；`agent.py` 只负责编排
+- LLM 调用只在节点模块中发生：`orchestration/planner.py`、`composer.py`、`history.py`、`followup.py`、`specialists/*/nodes.py`、`specialists/report/stages/`；`agent.py` 只负责编排
 - 禁止反向依赖（`validator` 不能 import `perception`）

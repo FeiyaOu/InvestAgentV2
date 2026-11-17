@@ -10,6 +10,12 @@ _STATE_TEXT = {"done": "已完成", "active": "进行中", "pending": "等待中
 
 def build_steps(state: dict, active_task: str | None, planner_attempts: list[dict]) -> list[dict]:
     """[{label, detail, state}] in execution order: planning, each planned task, composition."""
+    if state.get("followup_route") == "direct_answer":
+        return [{"label": "理解追问", "detail": "已有信息足够，无需重新研究", "state": "done"},
+                {"label": "解读已有结果", "detail": "基于已有研究解释、总结或改写",
+                 "state": "done" if state.get("final_response") else "active"}]
+    if state.get("followup_route") == "routing" and not state.get("planning_status"):
+        return [{"label": "理解问题", "detail": "判断是否需要新研究", "state": "active"}]
     planning = state.get("planning_status")
     attempt = max((a.get("attempt", 1) for a in planner_attempts), default=1)
     if planning in {"ready", "needs_clarification"}:

@@ -95,3 +95,29 @@
 预览取结论并可回退、事实提取/合并/渲染、事实跨越三轮窗口保留、无效输入不写事实；
 ≤3 轮不折叠、逐轮折叠滑出轮次、折叠失败时原文补位、摘要截断与空输出拒绝、上下文分块顺序。
 原有 test_parent_graph / test_agent / test_parent_state 全部保持通过。
+
+
+## 追问分流（2026-11-17）
+
+initialize 后先进入 route_followup；无研究结果和对话记忆时直接交给 Planner，不调用路由模型。
+有历史时使用 FAST_MODEL 作结构化分类；仅已有结果足以支持解释、概念说明、总结、改写时直答。
+新增数据、标的、日期区间、指标、计算、图表、报告、行情刷新、市场事件原因调查或不确定均走 Planner。
+路由器必须给出当前会话可用来源的 source_ids（recent_results 或标记为 conversation_memory 的历史轮次/上下文）；非法输出或异常回退 Planner。
+
+followup_answer 为独立无工具节点，与 Composer 使用相同 FAST_MODEL。输入所选完整回答及公开结构化结果，
+不得补造数字或重新计算；发现证据不足以 needs_planner 回退，同一轮继续完整研究流程。
+直答仍经过 record_turn / compact_history，保留对话和持久化接口的一致性。
+
+新增跨轮通道 recent_results 只保留最近三次成功回答，含 source_id、问题、完整最终回答和 Composer 白名单结果。
+不保存可执行的 DatasetStore/AnalysisStore，不含报告原始正文或原始供应商异常。
+已有检查点没有该字段时正常回退 Planner；不能仅凭截断 response_preview 进行直答。
+旧行情仅用于解释已有结论，不得称为最新行情；本阶段不支持跨轮复用数据集开展新计算。
+前端与 Streamlit 对直答展示“理解追问 / 解读已有结果”，不展示未执行的规划或专家任务。
+
+验证：test_followup.py 覆盖直答跳过研究、完整回答引用、无来源/非法来源/异常回退、
+回答发现证据不足后同轮进入 Planner，以及结果记忆的三轮上限。模型意图分类准确率仍需真实对话验收。
+
+补充修复：回忆“讨论哪两只股票”只需要已保存的用户问题，不依赖行情查询成功或完整结果。
+旧会话历史、失败轮次的用户提问和已提取事实均可作为 conversation_memory 来源；此类摘要不能用于补造缺失行情数字。
+React 结果页追问显式携带该结果的 conversation_id，避免从历史列表进入后误用另一个会话。
+路由回退原因以 followup_reason 进入节点调试事件，区分无历史、需要研究、来源无效和模型不可用。

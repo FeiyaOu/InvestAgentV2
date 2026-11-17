@@ -59,3 +59,9 @@ def test_html_shows_progress_counts_elapsed_and_escapes_text():
     html = progress_html(build_steps(state, "prices", []), elapsed=12.4)
     assert "正在进行深度研究" in html and "已用时 12 秒" in html and "已完成 1/1 个任务" in html
     assert "<script>" not in html
+
+
+def test_direct_followup_progress_has_no_planner():
+    steps = build_steps({"followup_route": "direct_answer"}, None, [])
+    assert [step["label"] for step in steps] == ["理解追问", "解读已有结果"]
+    assert steps[-1]["state"] == "active"

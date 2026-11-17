@@ -100,3 +100,12 @@ it("shows cancellation distinctly and clears a stale clarification when stopped"
   expect(s.interrupt).toBeNull();
   expect(s.error).toBeNull();
 });
+
+it("shows direct follow-up progress without a planner step", () => {
+  let s = emptySnapshot("r", "c", "解释Beta");
+  s = applyEvent(s, ev("node_update", { node: "route_followup", state: { followup_route: "direct_answer" } }));
+  expect(buildSteps(s).map((step) => step.label)).toEqual(["理解追问", "解读已有结果"]);
+  expect(buildSteps(s).map((step) => step.state)).toEqual(["done", "active"]);
+  s = applyEvent(s, ev("node_update", { node: "followup_answer", state: { final_response: "解释完成" } }));
+  expect(buildSteps(s).every((step) => step.state === "done")).toBe(true);
+});

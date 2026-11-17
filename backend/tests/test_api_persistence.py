@@ -127,8 +127,8 @@ def test_unfinished_runs_are_failed_on_restart(tmp_path):
     client = TestClient(create_app(graph=graph, settings=settings, max_workers=1))
     client.__enter__()
     user = AuthedClient(client, "alice@example.com")
-    # Seed an unfinished run without launching a worker: observing a terminal HTTP
-    # snapshot does not guarantee the worker has committed its final DB write.
+    # Seed an unfinished run without a worker so restart recovery cannot race
+    # normal finalization.
     record = client.app.state.run_manager.store.create(query="x", conversation_id=None, user_id=user.user["id"])
     run_id = record.run_id
     event = record.append({"type": "run_started", "scope": "parent", "task_id": None,
@@ -153,4 +153,46 @@ def test_unfinished_runs_are_failed_on_restart(tmp_path):
         events = client.get(f"/api/runs/{run_id}/events/list", headers={"authorization": f"Bearer {user.token}"}).json()
         assert events == [event]
     finally:
+        client.__exit__(None, None, None)
+
+
+def test_terminal_snapshot_waits_until_report_transaction_commits(tmp_path, monkeypatch):
+    """A slow report write must not expose a completed live snapshot prematurely."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from api import repository
+
+    writing, release, reading, returned = (threading.Event() for _ in range(4))
+    save_reports = repository.save_reports
+
+    def blocked_save(*args, **kwargs):
+        writing.set()
+        assert release.wait(5), 'test did not release report transaction'
+        return save_reports(*args, **kwargs)
+
+    monkeypatch.setattr(repository, 'save_reports', blocked_save)
+    client = open_client(tmp_path, report_script())
+    try:
+        user = AuthedClient(client)
+        run_id = user.post('/api/runs', json={'query': '生成报告'}).json()['run_id']
+        assert writing.wait(5), 'worker did not start persisting report'
+
+        def read_snapshot():
+            reading.set()
+            response = user.get(f'/api/runs/{run_id}')
+            returned.set()
+            return response.json()
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(read_snapshot)
+            try:
+                assert reading.wait(2)
+                assert not returned.wait(.1), 'completed snapshot escaped before report commit'
+            finally:
+                release.set()
+            assert future.result(timeout=5)['status'] == 'completed'
+        assert len(user.get('/api/reports').json()) == 1
+    finally:
+        release.set()
         client.__exit__(None, None, None)

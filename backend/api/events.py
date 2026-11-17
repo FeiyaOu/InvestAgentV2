@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 REPORT_FIELDS = ("perception_data", "world_model", "reasoning_plans", "selected_plan")
 CUSTOM_EVENTS = {"planner_attempt", "task_started", "analysis_artifacts", "strategy_artifacts",
                  "strategy_diagnostic", "analytics_diagnostic"}
-_DEBUG_KEYS = ("plan", "planning_status", "planning_attempts", "planning_error", "last_task_id",
+_DEBUG_KEYS = ("followup_route", "followup_reason", "followup_source_ids", "plan", "planning_status", "planning_attempts", "planning_error", "last_task_id",
                "supervisor_status", "supervisor_error", "tool_rounds", "tool_calls_used",
                "output_retries", "status", "error")
 

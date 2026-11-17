@@ -1,92 +1,198 @@
-# 持久化与账号（V4 第 4 步）
+"""Accounts, ownership, and durability of runs/reports across process restarts."""
+import json
 
-决策日期：2026-11-15。业务表与 LangGraph checkpoint 表放在同一个数据库：开发期 SQLite 单文件，
-生产 PostgreSQL（`INVEST_DATABASE_URL=postgresql+psycopg://...`，自动改用 PostgresSaver）。
-核心库 `src/` 不变；checkpointer 仍只负责线程状态，归属、列表、报告库都在业务表。
+from fastapi.testclient import TestClient
 
-## 访客与账号工作区（2026-11-16）
+from api.main import create_app
+from tests.conftest import make_valid_report
+from tests.test_api_events import PLAN
+from tests.test_api_runs import AuthedClient, ScriptedGraph, script, test_settings, wait_terminal
 
-- 首页无需登录即可浏览；`POST /api/auth/guest` 创建当前页面独立的临时身份。
-- 访客使用独立的内存 SQLite 与 InMemorySaver，研究、报告和 checkpoint 不写账号库或文件；
-  访客与访客、访客与账号之间的资源互不可见。所有运行仍共用有界线程池。
-- 访客 token、当前对话和浏览器查询缓存只存在当前页面内存，不写 localStorage/sessionStorage。
-  页面刷新或关闭不恢复访客内容；站内切换页面则继续保留并运行。
-- `POST /api/auth/guest/end {token}` 结束访客会话并立即撤销访问，取消未完成研究，
-  已发出的同步请求返回后销毁其私有内存工作区。pagehide 用 Beacon 尽力通知；
-  未收到关闭通知时由 15 分钟闲置过期及每分钟清理兜底，打开页面每分钟续期。
-- 账号 token 与按用户区分的当前对话 ID 继续本地保存，历史和报告继续存于持久数据库。
-  登录、退出或身份变化时清理前端查询缓存，访客内容不自动并入账号。
-- 关闭注册只关闭新账号创建，不关闭访客研究。访客模式不启用应用的 LangFuse 追踪回调。
 
-## 表
+def report_script(report=None, errors=None, status="completed"):
+    report = report or make_valid_report()
+    plan = {**PLAN, "tasks": [{"task_id": "rep", "category": "report", "question": "生成新能源行业报告", "depends_on": []}]}
+    record = {**plan["tasks"][0], "status": status, "error": None,
+              "result": {"final_report": json.dumps(report, ensure_ascii=False), "validation_errors": errors or []}}
+    return [((), "updates", {"initialize": {"user_query": "生成新能源行业报告"}}),
+            ((), "updates", {"planner": {"plan": plan, "planning_status": "ready"}}),
+            (("supervisor:x",), "custom", {"event": "task_started", "task_id": "rep", "category": "report"}),
+            (("supervisor:x", "report:y"), "updates", {"perception": {"perception_data": {"a": 1}}}),
+            ((), "updates", {"supervisor": {"task_results": {"rep": record}, "supervisor_status": status}}),
+            ((), "updates", {"composer": {"final_response": "报告已生成，请到报告中心查看。", "composition_status": "completed"}})]
 
-| 表 | 关键字段 | 说明 |
-|---|---|---|
-| users | id, email(unique), password_hash(argon2), display_name | 邮箱密码账号 |
-| conversations | id(=thread_id), user_id, title, turn_count, last_status, updated_at | 首次提问时创建；title 取首个问题 |
-| runs | run_id, conversation_id, user_id, query, status, started/finished_at, elapsed_seconds, error, snapshot(JSON), event_count | `snapshot` 在终止态写入 RunView，重启后仍可 GET |
-| run_events | run_id, seq, type, at, scope, task_id, category, payload(JSON) | 每个事件写穿，支持 `after` 回放 |
-| reports | id, run_id, task_id, user_id, conversation_id, title, industry_focus, …, status, draft, report(JSON), validation_errors(JSON) | run 终止时从 completed/partial 的 report 任务提取；校验只用 validate_report |
-| checkpoints / checkpoint_writes / checkpoint_blobs … | LangGraph 自建 | 不直接读写 |
 
-## 鉴权与归属
+def open_client(tmp_path, *scripts):
+    settings = test_settings(tmp_path)
+    client = TestClient(create_app(graph=ScriptedGraph(*scripts), settings=settings, max_workers=1))
+    client.__enter__()
+    return client
 
-- `POST /api/auth/register`（可用 `INVEST_ALLOW_REGISTRATION=false` 关闭）、`POST /api/auth/login` 返回 JWT（HS256，
-  `INVEST_JWT_SECRET`，默认 72 小时）；`GET /api/auth/me`。
-- 除 `/api/health` 与 auth 外全部需要 `Authorization: Bearer`。SSE 端点额外接受 `?token=`，因为 EventSource 不能带头。
-- run / conversation / report 均按 user_id 过滤；他人资源返回 404，不泄露存在性。
-  向他人的 conversation_id 发起 run 返回 403。
-- 未设置 `INVEST_JWT_SECRET` 时每次进程启动随机密钥并告警，重启后全部会话失效；生产必须显式配置。
 
-## 运行生命周期
+def test_register_login_me_and_duplicate_email(tmp_path):
+    client = open_client(tmp_path)
+    try:
+        created = client.post("/api/auth/register", json={"email": "Who@Example.com", "password": "password123"})
+        assert created.status_code == 201 and created.json()["user"]["email"] == "who@example.com"
+        assert client.post("/api/auth/register", json={"email": "who@example.com", "password": "password123"}).status_code == 409
+        assert client.post("/api/auth/register", json={"email": "not-an-email", "password": "password123"}).status_code == 422
+        assert client.post("/api/auth/register", json={"email": "x@example.com", "password": "short"}).status_code == 422
+        assert client.post("/api/auth/login", json={"email": "who@example.com", "password": "wrong"}).status_code == 401
+        token = client.post("/api/auth/login", json={"email": "who@example.com", "password": "password123"}).json()["access_token"]
+        me = client.get("/api/auth/me", headers={"authorization": f"Bearer {token}"})
+        assert me.status_code == 200 and me.json()["display_name"] == "Who"
+        assert client.get("/api/auth/me", headers={"authorization": "Bearer nonsense"}).status_code == 401
+    finally:
+        client.__exit__(None, None, None)
 
-`RunStore` 保留运行中的记录在内存以供低延迟 SSE，同时每个事件写入 run_events，状态变化写入 runs。
-终止（completed/failed）时写 snapshot、提取 reports、更新 conversation（turn_count+1、last_status）并从内存移除。
-`waiting_input` 的 run 继续驻留内存等待 resume。进程启动时 `queued/running` 的残留 run 标为
-failed（`service_restarted`），因为同步图无法跨进程续跑；checkpoint 中的 turns 不受影响。
 
-2026-11-16 补充：主动停止新增 cancelling/cancelled；取消终态同样保存 snapshot、已完成报告及事件，
-对话 last_status 使用 cancelled。重启遗留 cancelling 任务归为 cancelled。取消不会删除历史或 checkpoint，
-详见 `api-service.md` 的“主动停止与 SSE 生命周期”。数据库状态列为字符串，无需 schema 迁移。
+def test_runs_conversations_and_reports_are_scoped_to_owner(tmp_path):
+    client = open_client(tmp_path, script(), script())
+    try:
+        alice, bob = AuthedClient(client, "alice@example.com"), AuthedClient(client, "bob@example.com")
+        run_id = alice.post("/api/runs", json={"query": "查茅台价格", "conversation_id": "shared-id"}).json()["run_id"]
+        wait_terminal(alice, run_id)
+        assert bob.get(f"/api/runs/{run_id}").status_code == 404
+        assert bob.get(f"/api/runs/{run_id}/events/list").status_code == 404
+        assert bob.get("/api/conversations/shared-id").status_code == 404
+        assert bob.post("/api/runs", json={"query": "蹭对话", "conversation_id": "shared-id"}).status_code == 403
+        assert bob.get("/api/conversations").json() == []
+        assert bob.get("/api/runs").json() == []
+        assert [r["run_id"] for r in alice.get("/api/runs").json()] == [run_id]
+    finally:
+        client.__exit__(None, None, None)
 
-## 接口变化
 
-```text
-POST /api/auth/register | login        GET /api/auth/me
-GET  /api/runs?limit=                  当前用户最近的 run（不含 snapshot）
-GET  /api/conversations                当前用户对话列表（title、turn_count、run_count、last_status）
-GET  /api/conversations/{id}           + title/turn_count；展示轮次来自已结束的研究记录，包含 run_id
-GET  /api/reports                      报告库
-GET  /api/reports/{id}                 含完整 report JSON
-GET  /api/reports/{id}/download?format=md|html   services/report_export 生成，草稿文件名带 -draft
-```
+def test_run_events_and_reports_survive_restart(tmp_path):
+    client = open_client(tmp_path, report_script())
+    try:
+        user = AuthedClient(client, "alice@example.com")
+        run_id = user.post("/api/runs", json={"query": "生成新能源行业报告", "conversation_id": "c1"}).json()["run_id"]
+        done = wait_terminal(user, run_id)
+        assert done["status"] == "completed"
+        events_before = user.get(f"/api/runs/{run_id}/events/list").json()
+        reports = user.get("/api/reports").json()
+        assert len(reports) == 1 and reports[0]["title"] == "新能源行业" and reports[0]["draft"] is False
+        report_id = reports[0]["id"]
+        token = user.token
+    finally:
+        client.__exit__(None, None, None)
 
-`services/report_export.py` 是报告 Markdown/HTML 导出的唯一实现，Streamlit 的 report_viewer 改为引用。
+    # A fresh process over the same database: nothing is in memory any more.
+    client = open_client(tmp_path)
+    try:
+        headers = {"authorization": f"Bearer {token}"}
+        snapshot = client.get(f"/api/runs/{run_id}", headers=headers).json()
+        assert snapshot["status"] == "completed"
+        assert snapshot["state"]["final_response"] == "报告已生成，请到报告中心查看。"
+        assert snapshot["report_progress"] == {"rep": {"perception_data": {"a": 1}}}
+        assert client.get(f"/api/runs/{run_id}/events/list", headers=headers).json() == events_before
+        replay = client.get(f"/api/runs/{run_id}/events/list", headers=headers, params={"after": 3}).json()
+        assert replay[0]["seq"] == 4
+        detail = client.get(f"/api/reports/{report_id}", headers=headers).json()
+        assert detail["report"]["overall_rating"] == "buy" and detail["question"] == "生成新能源行业报告"
+        markdown = client.get(f"/api/reports/{report_id}/download", headers=headers)
+        assert markdown.status_code == 200 and markdown.headers["content-type"].startswith("text/markdown")
+        assert "# 新能源行业" in markdown.text and "rep.md" in markdown.headers["content-disposition"]
+        html = client.get(f"/api/reports/{report_id}/download", headers=headers, params={"format": "html"})
+        assert html.text.startswith("<!doctype html>") and "<h1>新能源行业</h1>" in html.text
+        assert client.get(f"/api/reports/{report_id}/download", headers=headers, params={"format": "pdf"}).status_code == 422
+        conversations = client.get("/api/conversations", headers=headers).json()
+        assert conversations[0]["conversation_id"] == "c1" and conversations[0]["turn_count"] == 1
+        assert conversations[0]["last_status"] == "completed"
+    finally:
+        client.__exit__(None, None, None)
 
-## 前端
 
-### 删除和侧栏隐藏（2026-11-16）
+def test_partial_report_is_saved_as_draft_and_download_is_labelled(tmp_path):
+    thin = make_valid_report()
+    thin["sources"] = thin["sources"][:2]  # Violates C5; validate_report is the single source of truth, not stored errors.
+    client = open_client(tmp_path, report_script(report=thin, status="partial"))
+    try:
+        user = AuthedClient(client, "alice@example.com")
+        run_id = user.post("/api/runs", json={"query": "生成报告"}).json()["run_id"]
+        wait_terminal(user, run_id)
+        [report] = user.get("/api/reports").json()
+        assert report["draft"] is True and report["status"] == "partial"
+        assert report["validation_errors"][0]["type"] == "insufficient_sources"
+        download = user.get(f"/api/reports/{report['id']}/download")
+        assert "rep-draft.md" in download.headers["content-disposition"] and "草稿" in download.text
+    finally:
+        client.__exit__(None, None, None)
 
-- 侧栏“最近研究”的移除只隐藏入口，不删除研究或报告；按账号保存在当前浏览器，访客仅当前页面内存。
-- `DELETE /api/reports/{id}` 删除报告库条目，保留原研究记录及其原始结果。
-- `DELETE /api/runs/{id}` 删除单次研究、事件和关联报告，并更新对话列表统计；
-  不改写已汇总的模型记忆。确认框明确提示：清除记忆需删除整个对话。
-- `DELETE /api/conversations/{id}` 删除整个对话、全部研究/事件/报告和该线程的全部 checkpoint。
-- 所有实际删除均校验归属，非本人资源返回 404；只允许删除 completed/failed/cancelled 的研究。
-  queued/running/cancelling/waiting_input 需先停止，后端返回 409 防止并发写回。
-- 实际删除有确认和错误反馈，按钮与导航链接分离，完成后刷新列表和统计；访客使用相同规则。
-- 展示轮次改由尚存在的研究快照构建，附稳定 run_id；删除的研究不会从 checkpoint 的旧摘要重新出现在历史列表。
 
-登录页（注册/登录切换）；token 存 localStorage，任何 401 自动登出。会话仅记住“当前对话 id”，
-对话列表、最近研究、报告库全部来自服务端；报告下载走后端接口。
+def test_unfinished_runs_are_failed_on_restart(tmp_path):
+    settings = test_settings(tmp_path)
+    graph = ScriptedGraph()
+    client = TestClient(create_app(graph=graph, settings=settings, max_workers=1))
+    client.__enter__()
+    user = AuthedClient(client, "alice@example.com")
+    # Seed an unfinished run without a worker so restart recovery cannot race
+    # normal finalization.
+    record = client.app.state.run_manager.store.create(query="x", conversation_id=None, user_id=user.user["id"])
+    run_id = record.run_id
+    event = record.append({"type": "run_started", "scope": "parent", "task_id": None,
+                           "category": None, "payload": {"resumed": False}})
+    from sqlmodel import Session
 
-## 未做
+    from api.models import Run
+    with Session(client.app.state.engine) as session:
+        row = session.get(Run, run_id)
+        row.status, row.finished_at = "running", None
+        session.add(row)
+        session.commit()
+    client.__exit__(None, None, None)
 
-密码重置与邮箱验证；多设备会话撤销；checkpoint 保留策略与清理任务；PDF 导出；
-Postgres 实机验证（代码路径已写，待部署步骤在 ECS 上验证）。
+    client = TestClient(create_app(graph=ScriptedGraph(), settings=settings, max_workers=1))
+    client.__enter__()
+    try:
+        snapshot = client.get(f"/api/runs/{run_id}", headers={"authorization": f"Bearer {user.token}"}).json()
+        assert snapshot["status"] == "failed"
+        assert snapshot["error"]["type"] == "service_restarted"
+        assert snapshot["finished_at"] is not None
+        events = client.get(f"/api/runs/{run_id}/events/list", headers={"authorization": f"Bearer {user.token}"}).json()
+        assert events == [event]
+    finally:
+        client.__exit__(None, None, None)
 
-## 验收
 
-`tests/test_api_persistence.py`：注册/登录/me/重复邮箱/弱密码；跨用户 404/403；
-重启后 run 快照、事件回放、报告详情与 md/html 下载可用；partial 报告标草稿且校验错误来自 validate_report；
-重启时残留 run 标 failed。`tests/test_api_runs.py` 全部改为带鉴权运行。
+def test_terminal_snapshot_waits_until_report_transaction_commits(tmp_path, monkeypatch):
+    """A slow report write must not expose a completed live snapshot prematurely."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from api import repository
+
+    writing, release, reading, returned = (threading.Event() for _ in range(4))
+    save_reports = repository.save_reports
+
+    def blocked_save(*args, **kwargs):
+        writing.set()
+        assert release.wait(5), 'test did not release report transaction'
+        return save_reports(*args, **kwargs)
+
+    monkeypatch.setattr(repository, 'save_reports', blocked_save)
+    client = open_client(tmp_path, report_script())
+    try:
+        user = AuthedClient(client)
+        run_id = user.post('/api/runs', json={'query': '生成报告'}).json()['run_id']
+        assert writing.wait(5), 'worker did not start persisting report'
+
+        def read_snapshot():
+            reading.set()
+            response = user.get(f'/api/runs/{run_id}')
+            returned.set()
+            return response.json()
+
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(read_snapshot)
+            try:
+                assert reading.wait(2)
+                assert not returned.wait(.1), 'completed snapshot escaped before report commit'
+            finally:
+                release.set()
+            assert future.result(timeout=5)['status'] == 'completed'
+        assert len(user.get('/api/reports').json()) == 1
+    finally:
+        release.set()
+        client.__exit__(None, None, None)

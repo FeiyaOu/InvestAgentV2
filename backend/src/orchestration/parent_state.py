@@ -1,7 +1,7 @@
 """Parent state: per-request outputs plus thread-scoped history.
 
 Per-request fields are rebuilt by `initialize` on every invocation. `turns`,
-`conversation_facts` and `history_summary` are the only cross-turn channels; they
+`conversation_facts`, `history_summary` and bounded `recent_results` are cross-turn channels; they
 persist under a checkpointer and `initialize` never writes them.
 """
 import re
@@ -152,9 +152,18 @@ def build_conversation_context(turns: list[dict], facts: dict | None, summary: d
     return "\n\n".join(blocks)
 
 
+def retain_results(left: list[dict] | None, right: list[dict] | None) -> list[dict]:
+    """Bound complete answer/evidence memory independently from compacted text history."""
+    return (list(left or []) + list(right or []))[-KEEP_RECENT_TURNS:]
+
+
 class ParentState(TypedDict, total=False):
     user_query: str
     conversation_context: str
+    recent_results: Annotated[list[dict], retain_results]
+    followup_route: Literal["routing", "planner", "direct_answer"]
+    followup_source_ids: list[str]
+    followup_reason: str | None
     turns: Annotated[list[dict], add_turns]
     conversation_facts: Annotated[dict, merge_facts]
     history_summary: dict  # {"text": str, "covered": int}; written only by compact_history.
@@ -180,7 +189,7 @@ def create_parent_state(user_query: str, *, conversation_context: str = "",
     request = ParentRequest.model_validate({"user_query": user_query,
         "conversation_context": conversation_context,
         "report_parameters": {} if report_parameters is None else report_parameters})
-    return {**request.model_dump(), "plan": None, "planning_status": None,
+    return {**request.model_dump(), "followup_route": "routing", "followup_source_ids": [], "followup_reason": None, "plan": None, "planning_status": None,
             "planning_error": None, "planning_attempts": 0, "task_results": {},
             "supervisor_status": None, "supervisor_error": None,
             "final_response": None, "composition_status": None, "composition_error": None,

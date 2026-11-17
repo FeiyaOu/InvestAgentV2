@@ -90,9 +90,9 @@ export function ReportReader() {
     return (
       <div className="report-overlay">
         <div className="report-toolbar">
-          <button className="report-close" onClick={() => navigate("/reports")}>
+          <Link className="report-close" to="/reports" replace aria-label="关闭报告" title="返回报告中心">
             <Icon name="close" size={19} />
-          </button>
+          </Link>
           <div>
             <b>报告不可用</b>
           </div>
@@ -118,9 +118,9 @@ export function ReportReader() {
   return (
     <div className="report-overlay">
       <div className="report-toolbar">
-        <button className="report-close" onClick={() => navigate(-1)}>
+        <Link className="report-close" to="/reports" replace aria-label="关闭报告" title="返回报告中心">
           <Icon name="close" size={19} />
-        </button>
+        </Link>
         <div>
           <b>{r.research_topic}</b>
           <span>

@@ -5,13 +5,15 @@
 
 ---
 
-## 当前运行架构（2026-11-13）
+## 当前运行架构（2026-11-17）
 
 公共入口和 Streamlit 已切换为请求级父图：
 
 ```text
 用户输入 + 显式会话摘要
-  → initialize → Planner → Supervisor → Composer → final_response
+  → initialize → route_followup
+                   ├─ 已有信息足够 → followup_answer → final_response
+                   └─ 需要新研究 → Planner → Supervisor → Composer → final_response
                      │        ├─ market_data 子图（LLM / ToolNode 循环）
                      │        ├─ report 子图（原六节点保持不变）
                      │        ├─ analytics 子图（计算与图表）
@@ -145,6 +147,7 @@ Deliberative 路径的最终输出必须严格遵循以下 JSON 结构：
 
 #### C8：任务类别与计划有效性
 
+- 解释型追问可经独立路由直接回答，不创建 TaskPlan；需要新数据、新计算、报告或判断不确定时进入 Planner。
 - category 只能为 market_data / analytics / investment_strategy / report。
 - TaskPlan 拒绝重复 ID、未知/重复/自依赖、有向环与状态矛盾；失败计划不得执行。
 - 旧 processing_mode 合法性约束退出公共接口，仅报告局部 State 保留兼容字段。

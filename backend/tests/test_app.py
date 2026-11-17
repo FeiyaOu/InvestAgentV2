@@ -338,7 +338,7 @@ def test_progress_panel_follows_real_events_and_run_time_is_recorded():
         return real(steps, elapsed)
     with patch("app.progress.progress_html", side_effect=spy):
         at = submit(fake())
-    assert calls[0] == [("理解问题并规划任务", "active"), ("汇总回答", "pending")]
+    assert calls[0] == [("理解问题", "active")]
     assert ("数据采集", "done") in calls[-1] and calls[-1][-1] == ("汇总回答", "done")
     assert isinstance(at.session_state["conversation_history"][-1]["seconds"], int)
     assert "正在进行深度研究" not in page_text(at)  # Panel is cleared once results are shown.

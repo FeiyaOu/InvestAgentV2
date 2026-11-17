@@ -293,4 +293,5 @@ class RunManager:
                 kind = "run_waiting" if status == "waiting_input" else "run_finished"
                 record.append({"type": kind, "scope": "parent", "task_id": None, "category": None,
                                "payload": {"status": status, "error": record.error, "elapsed_seconds": record.elapsed()}})
-            self.store.persist_status(record)
+                # Publish completion only after the final snapshot and reports commit.
+                self.store.persist_status(record)

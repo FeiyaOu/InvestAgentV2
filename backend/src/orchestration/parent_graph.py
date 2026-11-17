@@ -1,10 +1,11 @@
-"""Planner → Supervisor → Composer parent graph with an optional durable thread.
+"""Follow-up routing or Planner → Supervisor → Composer, with an optional durable thread.
 
 Without a checkpointer the graph is request-local, exactly as before. With one, the
 same thread_id accumulates `turns`, planner context is derived from them, and
 clarification suspends the run with `interrupt` until the caller resumes.
 """
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
@@ -12,7 +13,8 @@ from langgraph.types import interrupt
 from pydantic import ValidationError
 
 from src.core.datasets import DatasetStore
-from src.orchestration.composer import composer
+from src.orchestration.composer import _public_records, composer
+from src.orchestration.followup import answer_followup, route_followup
 from src.orchestration.history import compact_history
 from src.orchestration.parent_state import (
     ParentState,
@@ -72,6 +74,10 @@ def _record_turn(state: ParentState) -> dict:
     update = {"turns": [{"query": state["user_query"], "response_preview": preview[:PREVIEW_CHARS],
                          "status": status, "clarifications": list(state.get("clarifications", [])),
                          "completed_at": datetime.now(timezone.utc).isoformat()}]}
+    if state.get("composition_status") == "completed" and preview:
+        update["recent_results"] = [{"source_id": str(uuid4()), "query": state["user_query"],
+                                     "answer": state.get("final_response") or preview,
+                                     "records": _public_records(state.get("task_results") or {})}]
     facts = extract_facts(state.get("plan"), state.get("task_results"))
     if facts:
         update["conversation_facts"] = facts
@@ -129,14 +135,20 @@ def create_parent_graph(*, market_data_graph=None, report_graph=None, analytics_
 
     graph = StateGraph(ParentState)
     graph.add_node("initialize", _initialize)
+    graph.add_node("route_followup", route_followup)
+    graph.add_node("followup_answer", answer_followup)
     graph.add_node("planner", plan)
     graph.add_node("supervisor", supervise)
     graph.add_node("composer", composer)
     graph.add_node("record_turn", _record_turn)
     graph.add_node("compact_history", compact_history)
     graph.add_edge(START, "initialize")
-    graph.add_conditional_edges("initialize", lambda s: "composer" if s["planning_status"] == "failed" else "planner",
-                                {"composer": "composer", "planner": "planner"})
+    graph.add_conditional_edges("initialize", lambda s: "composer" if s["planning_status"] == "failed" else "route_followup",
+                                {"composer": "composer", "route_followup": "route_followup"})
+    graph.add_conditional_edges("route_followup", lambda s: s["followup_route"],
+                                {"planner": "planner", "direct_answer": "followup_answer"})
+    graph.add_conditional_edges("followup_answer", lambda s: s["followup_route"],
+                                {"planner": "planner", "direct_answer": "record_turn"})
     routes = {"supervisor": "supervisor", "composer": "composer"}
     if interactive:
         graph.add_node("clarify", _clarify)

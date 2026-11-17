@@ -9,19 +9,23 @@ import { Answer } from "./RunPage";
 const snapshot = fixture as unknown as RunSnapshot;
 
 describe("Answer", () => {
-  it("renders market data and analytics panels with metrics and chart cards from a real snapshot", () => {
+  it("shows conclusions and chart highlights while full task details stay collapsed", () => {
     const html = renderToStaticMarkup(
       <MemoryRouter>
         <Answer snapshot={snapshot} elapsed={22} />
       </MemoryRouter>,
     );
-    expect(html).toContain("核心结论");
-    expect(html).toContain("数据与证据");
-    expect(html).toContain("分析结果");
-    expect(html).toContain("analyze_price_performance");
+    expect(html).toContain("核心观点");
+    expect(html).not.toContain("数据与证据");
+    expect(html).toContain("图表与关键数据");
+    expect(html).toContain("展开详细分析");
+    expect(html).not.toMatch(/<details[^>]* open/);
+    expect(html).not.toContain("analyze_price_performance");
     expect(html).toContain("累计价格收益");
     expect(html).toContain("历史回撤");
     expect(html).toContain("样本 259");
+    expect(html).toContain("模拟数据");
+    expect(html).toContain("展示价格相对历史高点的回撤");
     expect(html).toContain("部分完成");
     expect(html).not.toContain("undefined");
     expect(html).not.toContain("[object Object]");
@@ -43,4 +47,13 @@ describe("Answer", () => {
     expect(html).toContain("请输入非空问题");
     expect(html).toContain("未能生成任务计划");
   });
+});
+
+
+it("keeps a direct explanatory answer concise without empty chart or detail sections", () => {
+  const direct: RunSnapshot = { ...snapshot, state: { composition_summary: "Beta表示相对市场的敏感度。", final_response: "Beta表示相对市场的敏感度。" } };
+  const html = renderToStaticMarkup(<MemoryRouter><Answer snapshot={direct} elapsed={1} /></MemoryRouter>);
+  expect(html).toContain("核心观点");
+  expect(html).not.toContain("图表与关键数据");
+  expect(html).not.toContain("展开详细分析");
 });

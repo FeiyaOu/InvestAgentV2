@@ -4,7 +4,7 @@ import { Markdown } from "../../../components/Markdown";
 import { Details, KeyValueList, Notice, RecordTable, StatusBadge } from "../../../components/ResultPrimitives";
 
 /** Labels follow backend app/analytics_dashboard.py so both shells name metrics identically. */
-const LABELS: Record<string, string> = {
+export const LABELS: Record<string, string> = {
   period_return: "区间收益",
   annualized_volatility: "年化波动率",
   max_drawdown: "最大回撤",
@@ -30,12 +30,13 @@ const SERIES: Record<string, string> = {
   benchmark_cumulative_return: "基准",
 };
 
-function label(key: string) {
+export function label(key: string) {
   return SERIES[key] ?? LABELS[key] ?? key;
 }
 
-function ArtifactCharts({ artifact }: { artifact: AnalysisArtifact }) {
+export function ArtifactCharts({ artifact, limit = Infinity }: { artifact: AnalysisArtifact; limit?: number }) {
   const charts: React.ReactNode[] = [];
+  const caption = (text: string) => <p className="zh-chart-caption">{text} · {artifact.start_date} 至 {artifact.end_date} · 样本 {artifact.sample_size}</p>;
   if (artifact.tool_name === "build_return_matrix" && artifact.table.length) {
     const labels = Array.from(new Set(artifact.table.flatMap((r) => [String(r.symbol_a), String(r.symbol_b)])));
     const matrix = labels.map((a) =>
@@ -52,6 +53,7 @@ function ArtifactCharts({ artifact }: { artifact: AnalysisArtifact }) {
       <div className="chart-card">
         <div className="chart-head"><div className="legend">收益相关系数</div></div>
         <Heatmap labels={labels} matrix={matrix} />
+        {caption("共同交易日的历史收益相关性，相关性不代表因果关系")}
       </div>
     );
   }
@@ -66,6 +68,7 @@ function ArtifactCharts({ artifact }: { artifact: AnalysisArtifact }) {
           unit="fraction"
           series={benchmarkKeys.filter((k) => artifact.series[k]?.length).map((k) => ({ name: SERIES[k], points: artifact.series[k] }))}
         />
+        {caption("对比标的与基准在同一区间的累计价格收益，不预示未来表现")}
       </div>,
     );
   }
@@ -75,6 +78,7 @@ function ArtifactCharts({ artifact }: { artifact: AnalysisArtifact }) {
       <div className="chart-card" key={key}>
         <div className="chart-head"><div className="legend">{label(key)}</div></div>
         <LineChart unit={artifact.metric_units[key] ?? "fraction"} series={[{ name: label(key), points, area: key === "drawdown" }]} />
+        {caption(key === "drawdown" ? "展示价格相对历史高点的回撤" : `展示${label(key)}在历史样本中的变化`)}
       </div>,
     );
   }
@@ -89,10 +93,11 @@ function ArtifactCharts({ artifact }: { artifact: AnalysisArtifact }) {
       <div className="chart-card" key={`valuation_${metric}`}>
         <div className="chart-head"><div className="legend">{metric} · {String([...bases][0])}</div></div>
         <BarChart categories={rows.map((r) => String(r.symbol ?? "未知"))} values={rows.map((r) => r.value as number)} unit={String([...units][0])} />
+        {caption("同一指标口径的估值比较；较低估值不等于更值得投资")}
       </div>,
     );
   }
-  return <>{charts}</>;
+  return <>{charts.slice(0, limit)}</>;
 }
 
 export function AnalyticsPanel({

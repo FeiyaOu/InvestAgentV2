@@ -3323,3 +3323,17 @@ footer {
 .zh-example-prev, .zh-example-next { display: flex; }
 .zh-example-prev { transform: rotate(90deg); }
 .zh-example-next { transform: rotate(-90deg); }
+
+/* Conclusions first; structured evidence is promoted above optional task details. */
+.zh-key-insights { margin-top: 24px; padding: 22px; background: var(--color-card-bg); border: 1px solid var(--color-border); border-radius: 12px; }
+.zh-key-insights h3 { margin: 0 0 14px; color: var(--color-text-primary); font-size: 18px; }
+.zh-insight-finding { margin-top: 20px; }
+.zh-insight-finding h4 { margin: 0 0 6px; color: var(--color-text-secondary); font-size: 15px; }
+.zh-chart-caption { margin: 12px 0 0; color: var(--color-text-secondary); font-size: 13.2px; line-height: 1.7; }
+.zh-answer-details { margin-top: 24px; border: 1px solid var(--color-border); border-radius: 10px; background: var(--color-card-bg); }
+.zh-answer-details > summary { cursor: pointer; padding: 16px 20px; color: var(--color-primary); font-weight: 600; }
+.zh-answer-details > summary:focus-visible { outline: 2px solid var(--color-primary-soft); outline-offset: 2px; }
+.zh-answer-details > div { padding: 0 20px 20px; }
+.zh-report-entry { color: var(--color-primary); font-weight: 600; }
+@media (max-width: 600px) { .zh-key-insights { padding: 16px; } .zh-answer-details > div { padding: 0 12px 12px; } }
+.zh-insight-notices { margin: 0; padding-left: 18px; line-height: 1.7; }

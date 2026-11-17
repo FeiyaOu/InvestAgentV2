@@ -56,8 +56,8 @@ export function ConversationPage({ onFollowUp, submitting }: {
         placeholder={busy ? "本轮结束后可继续追问…" : "基于以上结果继续追问…"}
         onChange={(event) => setQuestion(event.target.value)}
         onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) void send(); }} />
-      <button disabled={!question.trim() || busy || submitting} onClick={() => void send()}>
-        <Icon name="send" size={16} />{submitting ? "提交中…" : "发送"}
+      <button aria-label={submitting ? "正在发送" : "发送消息"} title="发送消息" disabled={!question.trim() || busy || submitting} onClick={() => void send()}>
+        <Icon name="send" size={16} />
       </button>
     </div></div>
   </div></div>;

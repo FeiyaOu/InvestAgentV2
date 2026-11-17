@@ -43,12 +43,13 @@ export function ConversationPage({ onFollowUp, submitting }: {
     if (!question.trim() || busy || submitting || !conversationId) return;
     if (await onFollowUp(question.trim(), conversationId)) setQuestion("");
   };
-  if (conversation.error) return <Notice tone="error">无法读取对话：{String(conversation.error)}</Notice>;
+  if (conversation.error && !conversation.data) return <Notice tone="error">无法读取对话：{String(conversation.error)}</Notice>;
   if (!conversation.data) return <p className="zh-muted">加载对话中…</p>;
   return <div className="result-content"><div className="result-wrap">
     <div className="result-breadcrumb"><span>当前对话</span><b>/</b><span>{conversation.data.title || "研究对话"}</span></div>
+    {conversation.error && <Notice tone="warn">暂时无法同步对话，已保留当前内容。正在进行的研究仍可在下方查看。</Notice>}
     {runs.length === 0 && <p className="zh-muted">这个对话暂无研究内容，可以在下方继续提问。</p>}
-    {runs.map((run) => <div className="zh-conversation-message" id={`run-${run.run_id}`} key={run.run_id}><ResearchTurn runId={run.run_id} conversationId={conversationId!} /></div>)}
+    {runs.map((run) => <div className="zh-conversation-message" id={`run-${run.run_id}`} key={run.run_id}><ResearchTurn runId={run.run_id} conversationId={conversationId!} initialSnapshot={run} /></div>)}
     <div ref={bottom} />
     <div className="followup-bar"><div>
       <Icon name="spark" size={16} />

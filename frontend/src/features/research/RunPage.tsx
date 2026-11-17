@@ -13,6 +13,7 @@ import { AnalyticsPanel } from "./panels/AnalyticsPanel";
 import { MarketDataPanel } from "./panels/MarketDataPanel";
 import { ReportPanel } from "./panels/ReportPanel";
 import { StrategyPanel } from "./panels/StrategyPanel";
+import { KeyInsights } from "./KeyInsights";
 
 const STATE_TEXT: Record<ProgressStep["state"], string> = {
   done: "已完成",
@@ -103,6 +104,7 @@ function ClarificationCard({ snapshot, onResume }: { snapshot: RunSnapshot; onRe
 
 export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: number }) {
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const state = snapshot.state;
   const summary = state.composition_summary;
   const full = state.final_response ?? "";
@@ -144,11 +146,15 @@ export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
 
       {(summary || (!details && full)) && (
         <div className="summary-card">
-          <span className="summary-label">核心结论</span>
+          <span className="summary-label">核心观点</span>
           <Markdown text={summary || full} />
         </div>
       )}
 
+      <KeyInsights snapshot={snapshot} />
+      {(planned.length > 0 || details) && <details className="zh-answer-details" onToggle={(event) => setExpanded(event.currentTarget.open)}>
+      <summary>{expanded ? "收起详细分析" : "展开详细分析"}</summary>
+      {expanded && <div>
       {SECTIONS.map(([category, title, subtitle]) => {
         const tasks = planned.filter((t) => t.category === category);
         if (!tasks.length) return null;
@@ -202,6 +208,8 @@ export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
           <Markdown text={details} />
         </details>
       )}
+      </div>}
+      </details>}
       {!summary && !full && TERMINAL.includes(snapshot.status) && <p className="zh-muted">本轮没有可汇总的回答。</p>}
     </section>
   );

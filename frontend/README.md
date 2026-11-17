@@ -44,7 +44,9 @@ src/
 3. `waiting_input` 时显示澄清卡片，`POST /resume` 后重新订阅。
    运行、排队或等待补充时可点“停止研究”：`POST /cancel`，显示 cancelling → cancelled。
    离开页面只清理订阅，后台任务继续；SSE 具名事件和断线退避续订由 `api/runStream.ts` 管理。
-4. 结果页按 `state.plan.tasks` 的 category 渲染：MarketDataPanel、AnalyticsPanel（指标 + 图表来自
+4. 每轮默认展示核心观点、精选图表（每个分析产物最多两张）与关键指标（每项最多六个），附图表说明、日期和数据限制。
+   “展开详细分析”默认收起，展开后才挂载全部任务面板及全文；报告阅读入口直接保留。
+   完整结果按 `state.plan.tasks` 的 category 渲染：MarketDataPanel、AnalyticsPanel（指标 + 图表来自
    `analysis_snapshots` 的结构化 series）、StrategyPanel（`strategy_series`）、ReportPanel（阶段进度 + 跳转报告中心）。
 
 ## 约定

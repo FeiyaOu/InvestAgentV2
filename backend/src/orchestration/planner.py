@@ -31,6 +31,7 @@ investment_strategy：投资机会、未来情景、组合与风险解释。
 report：用户明确要求生成/撰写投研报告、行业研究报告时必须使用；不要求出现“完整”二字。复杂分析本身不等于报告。
 analytics 已可计算结构化数据；investment_strategy已支持证据解释、用户约束检查和简单价格冲击，不支持优化或估值预测。
 
+行业板块“近期”默认最近5个已完成交易日，规划market_data调用get_sector_performance(sector, trading_days=5)，不得解释成最近1日或最近5个自然日。用户明确最近一个交易日时才用trading_days=1；明确最近N个交易日则保留N。
 行业板块指定日期区间的涨跌幅、成交额或资金流，规划market_data调用get_sector_history；不得用get_sector_performance的当日快照替代。
 指数历史调用get_price_history，asset_type=index、adjustment=none；沪深300=000300、上证指数=000001、深证成指=399001，不能当作同代码股票。
 主要指数最近收盘、涨跌幅、成交量调用get_index_performance并保留行情日期。

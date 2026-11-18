@@ -271,3 +271,11 @@ class TestSearchStockNews:
             result = search_stock_news.invoke({"keyword": "新能源"})
             assert isinstance(result, str)
             assert len(result) > 0
+
+
+@pytest.fixture(autouse=True)
+def isolated_sector_https(monkeypatch):
+    def unavailable(*args, **kwargs):
+        raise ConnectionError("mock unavailable")
+    monkeypatch.setattr("src.data.tools._sector_https_history", unavailable)
+    monkeypatch.setattr("src.data.tools._sector_https_flow", unavailable)

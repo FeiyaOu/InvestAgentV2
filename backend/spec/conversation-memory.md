@@ -8,7 +8,7 @@
 | 层 | 字段 | 生命周期 |
 |---|---|---|
 | 本轮请求 | user_query、conversation_context、plan、planning_*、task_results、supervisor_*、final_response、composition_*、clarification_rounds、clarifications | 每次 invoke 由 `initialize` 全量重建 |
-| 线程累积 | `turns`（append-only reducer `add_turns`）、`conversation_facts`（reducer `merge_facts`）、`history_summary`（`{text, covered}`，仅 `compact_history` 写） | 仅在 checkpointer 下跨 invoke 保留；`initialize` 从不写它们 |
+| 线程累积 | `turns`（追加（同轮重试按稳定时间戳替换） reducer `add_turns`）、`conversation_facts`（reducer `merge_facts`）、`history_summary`（`{text, covered}`，仅 `compact_history` 写） | 仅在 checkpointer 下跨 invoke 保留；`initialize` 从不写它们 |
 
 每个 turn 记录 `query`、`response_preview`（≤1200 字）、`status`、`clarifications`、`completed_at`，
 由 `record_turn` 节点在 Composer 之后追加。无效输入（空问题）不生成 turn。
@@ -121,3 +121,5 @@ followup_answer 为独立无工具节点，与 Composer 使用相同 FAST_MODEL�
 旧会话历史、失败轮次的用户提问和已提取事实均可作为 conversation_memory 来源；此类摘要不能用于补造缺失行情数字。
 React 结果页追问显式携带该结果的 conversation_id，避免从历史列表进入后误用另一个会话。
 路由回退原因以 followup_reason 进入节点调试事件，区分无历史、需要研究、来源无效和模型不可用。
+
+手动重放同一轮时保留原completed_at作为轮次标识，替换其回答摘要；重试执行时间与原结果在业务快照归档中保留。

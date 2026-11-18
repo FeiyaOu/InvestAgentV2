@@ -153,7 +153,7 @@ class RunStore:
         with record.lock:
             fields = {"status": record.status, "started_at": record.started_at, "finished_at": record.finished_at,
                       "error": record.error, "elapsed_seconds": record.elapsed(),
-                      "snapshot": jsonable(record.view.snapshot()) if terminal else None}
+                      "snapshot": jsonable(record.view.snapshot()) if terminal or record.view.state.get("execution_attempt", 1) > 1 else None}
         with session_scope(self.engine) as session:
             repository.update_run(session, record.run_id, **fields)
             if record.status in {"completed", "failed", "cancelled"}:
@@ -161,7 +161,7 @@ class RunStore:
                                         user_id=record.user_id, state=fields["snapshot"]["state"])
                 status = ("cancelled" if record.status == "cancelled" else
                           record.view.state.get("supervisor_status") or record.view.state.get("planning_status") or record.status)
-                repository.touch_conversation(session, record.conversation_id, status=status, counted=True)
+                repository.touch_conversation(session, record.conversation_id, status=status, counted=record.view.state.get("execution_attempt", 1) == 1)
             elif record.status == "waiting_input":
                 repository.touch_conversation(session, record.conversation_id, status="waiting_input", counted=False)
         if record.status in {"completed", "failed", "cancelled"}:
@@ -214,6 +214,49 @@ class RunManager:
         record.future = self._pool.submit(self._execute, record, Command(resume=answer))
         return record
 
+    def retry(self, record: RunRecord) -> RunRecord:
+        from src.orchestration.planner_schemas import TaskPlan
+        with self.store.management_lock:
+            current = self.store.get(record.run_id)
+            if current is None or current.user_id != record.user_id:
+                raise ValueError("研究记录已不存在")
+            with current.lifecycle_lock, current.lock:
+                if current.status not in {"completed", "failed", "cancelled"}:
+                    raise ValueError("请等待本轮结束，或先停止本轮研究")
+                others = self.store.for_conversation(current.conversation_id)
+                if any(r.run_id != current.run_id and r.status not in {"completed", "failed", "cancelled"} for r in others):
+                    raise ValueError("此对话还有未结束的研究，请先结束或停止")
+                saved = current.snapshot()
+                state = saved["state"]
+                try:
+                    plan = TaskPlan.model_validate(state.get("plan"))
+                except Exception:
+                    raise ValueError("本轮没有有效原始计划，无法直接重放") from None
+                if plan.status != "ready" or not any(t.category == "market_data" for t in plan.tasks):
+                    raise ValueError("本轮没有可重试的数据采集计划")
+                history = list(state.get("retry_history") or [])
+                saved["state"].pop("retry_history", None)
+                history.append(saved)
+                turn = (state.get("turns") or [{}])[-1]
+                source = (state.get("recent_results") or [{}])[-1]
+                payload = {"user_query": current.query, "retry_plan": plan.to_state(),
+                           "report_parameters": state.get("report_parameters") or {},
+                           "replay_turn_completed_at": state.get("replay_turn_completed_at") or turn.get("completed_at"),
+                           "replay_source_id": state.get("replay_source_id") or source.get("source_id")}
+                current.view = RunView(state={"plan": plan.to_state(), "planning_status": "ready",
+                    "retry_history": history, "execution_attempt": state.get("execution_attempt", 1) + 1,
+                    "replay_turn_completed_at": payload["replay_turn_completed_at"], "replay_source_id": payload["replay_source_id"]})
+                current.status, current.started_at, current.finished_at, current.error = "queued", None, None, None
+                current._elapsed_final, current._started_monotonic = None, None
+                current.cancel_requested = threading.Event()
+                current.store = self.store
+                self.store.activate(current)
+                current.append({"type": "run_queued", "scope": "parent", "task_id": None, "category": None,
+                                "payload": {"retry": True, "query": current.query, "conversation_id": current.conversation_id}})
+                self.store.persist_status(current)
+                current.future = self._pool.submit(self._execute, current, payload)
+                return current
+
     def cancel(self, record: RunRecord) -> RunRecord:
         with record.lifecycle_lock:
             if record.status in {"completed", "failed", "cancelled", "cancelling"}:
@@ -243,7 +286,7 @@ class RunManager:
         else:
             config["callbacks"] = callbacks.copy()
             config["callbacks"].add_handler(guard, inherit=True)
-        config["configurable"] = {**config.get("configurable", {}), "thread_id": record.conversation_id}
+        config["configurable"] = {**config.get("configurable", {}), "thread_id": record.conversation_id, "check_cancelled": guard.check}
         return config
 
     def _execute(self, record: RunRecord, payload):

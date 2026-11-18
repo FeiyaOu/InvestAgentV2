@@ -165,14 +165,16 @@ def save_reports(session: Session, *, run_id: str, conversation_id: str, user_id
         except ValueError:
             continue
         existing = session.exec(select(Report).where(Report.run_id == run_id, Report.task_id == task_id)).first()
-        if existing is not None:
-            continue
-        item = Report(id="report_" + uuid4().hex, run_id=run_id, task_id=task_id, user_id=user_id,
+        item = Report(id=existing.id if existing is not None else "report_" + uuid4().hex, run_id=run_id, task_id=task_id, user_id=user_id,
                       conversation_id=conversation_id, question=planned.get(task_id, record).get("question", ""),
                       title=str(report.get("research_topic") or ""), industry_focus=str(report.get("industry_focus") or ""),
                       time_horizon=str(report.get("time_horizon") or ""), report_date=str(report.get("report_date") or ""),
                       overall_rating=str(report.get("overall_rating") or ""), status=record["status"],
                       draft=bool(errors) or record["status"] == "partial", report=report, validation_errors=errors)
+        if existing is not None:
+            for key, value in item.model_dump(exclude={"id", "created_at"}).items():
+                setattr(existing, key, value)
+            item = existing
         session.add(item)
         saved.append(item)
     session.flush()

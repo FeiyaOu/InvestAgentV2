@@ -159,3 +159,25 @@ def test_legacy_conversation_recall_bypasses_planner_after_initialize():
     planner.assert_not_called()
     assert "茅台" in result["final_response"] and "五粮液" in result["final_response"]
     assert "查茅台五粮液股价" in router.invoke.call_args.args[0]["conversation_context"]
+
+
+def test_saved_plan_replays_without_planner_and_replaces_original_memory_turn(checkpoint):
+    planner, composer, market = Mock(), Mock(), Mock()
+    plan = {'status': 'ready', 'clarification_questions': [], 'tasks': [
+        {'task_id': 'm', 'category': 'market_data', 'question': '查询行情', 'depends_on': []}]}
+    planner.invoke.return_value = plan
+    composer.invoke.return_value = {'answer': '初次回答'}
+    market.invoke.return_value = {'status': 'completed', 'error': None, 'result': {
+        'answer': '行情', 'evidence_ids': [], 'evidence': [], 'missing_information': [], 'dataset_refs': []}}
+    with patch('src.orchestration.planner._create_chain', return_value=planner), patch('src.orchestration.composer._create_chain', return_value=composer):
+        graph = create_parent_graph(market_data_graph=market, checkpointer=checkpoint)
+        config = {'configurable': {'thread_id': 'replay'}}
+        original = graph.invoke({'user_query': '查行情'}, config)
+        composer.invoke.return_value = {'answer': '重试后的回答'}
+        replay = graph.invoke({'user_query': '查行情', 'retry_plan': original['plan'],
+            'replay_turn_completed_at': original['turns'][-1]['completed_at'],
+            'replay_source_id': original['recent_results'][-1]['source_id']}, config)
+    assert planner.invoke.call_count == 1 and market.invoke.call_count == 2
+    assert len(replay['turns']) == 1
+    assert replay['turns'][0]['response_preview'] == '重试后的回答'
+    assert len(replay['recent_results']) == 1

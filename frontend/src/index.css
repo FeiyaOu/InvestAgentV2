@@ -3337,3 +3337,8 @@ footer {
 .zh-report-entry { color: var(--color-primary); font-weight: 600; }
 @media (max-width: 600px) { .zh-key-insights { padding: 16px; } .zh-answer-details > div { padding: 0 12px 12px; } }
 .zh-insight-notices { margin: 0; padding-left: 18px; line-height: 1.7; }
+.zh-retry-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 14px 0; }
+.zh-retry-row button { padding: 8px 14px; border: 1px solid var(--color-border-strong); border-radius: 7px; background: var(--color-card-bg); color: var(--color-primary); cursor: pointer; }
+.zh-retry-row button:hover:not(:disabled) { background: var(--color-blue-50); }
+.zh-retry-row button:disabled { opacity: .5; cursor: wait; }
+.zh-retry-row span { color: var(--color-text-tertiary); font-size: 13.2px; }

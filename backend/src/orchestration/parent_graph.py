@@ -40,8 +40,17 @@ def _initialize(state: ParentState) -> dict:
     context = (build_conversation_context(turns, state.get("conversation_facts"), state.get("history_summary"))
                if turns else state.get("conversation_context", ""))
     try:
-        return create_parent_state(state.get("user_query"), conversation_context=context,
-                                   report_parameters=state.get("report_parameters"))
+        clean = create_parent_state(state.get("user_query"), conversation_context=context,
+                                    report_parameters=state.get("report_parameters"))
+        if state.get("retry_plan"):
+            plan = TaskPlan.model_validate(state["retry_plan"])
+            if plan.status != "ready":
+                raise ValueError("重试需要可执行的原始计划")
+            return {**clean, "plan": plan.to_state(), "planning_status": "ready", "replaying": True,
+                    "replay_turn_completed_at": state.get("replay_turn_completed_at"),
+                    "replay_source_id": state.get("replay_source_id"),
+                    "history_summary": {"text": "", "covered": 0}}
+        return clean
     except ValidationError:
         # Clear every previous execution output even when input validation fails.
         clean = create_parent_state("无效输入")
@@ -73,9 +82,9 @@ def _record_turn(state: ParentState) -> dict:
     preview = state.get("composition_summary") or state.get("final_response") or ""
     update = {"turns": [{"query": state["user_query"], "response_preview": preview[:PREVIEW_CHARS],
                          "status": status, "clarifications": list(state.get("clarifications", [])),
-                         "completed_at": datetime.now(timezone.utc).isoformat()}]}
+                         "completed_at": state.get("replay_turn_completed_at") or datetime.now(timezone.utc).isoformat()}]}
     if state.get("composition_status") == "completed" and preview:
-        update["recent_results"] = [{"source_id": str(uuid4()), "query": state["user_query"],
+        update["recent_results"] = [{"source_id": state.get("replay_source_id") or str(uuid4()), "query": state["user_query"],
                                      "answer": state.get("final_response") or preview,
                                      "records": _public_records(state.get("task_results") or {})}]
     facts = extract_facts(state.get("plan"), state.get("task_results"))
@@ -143,8 +152,8 @@ def create_parent_graph(*, market_data_graph=None, report_graph=None, analytics_
     graph.add_node("record_turn", _record_turn)
     graph.add_node("compact_history", compact_history)
     graph.add_edge(START, "initialize")
-    graph.add_conditional_edges("initialize", lambda s: "composer" if s["planning_status"] == "failed" else "route_followup",
-                                {"composer": "composer", "route_followup": "route_followup"})
+    graph.add_conditional_edges("initialize", lambda s: "composer" if s["planning_status"] == "failed" else "supervisor" if s.get("replaying") else "route_followup",
+                                {"composer": "composer", "supervisor": "supervisor", "route_followup": "route_followup"})
     graph.add_conditional_edges("route_followup", lambda s: s["followup_route"],
                                 {"planner": "planner", "direct_answer": "followup_answer"})
     graph.add_conditional_edges("followup_answer", lambda s: s["followup_route"],

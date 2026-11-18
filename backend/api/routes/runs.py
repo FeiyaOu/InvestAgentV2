@@ -79,6 +79,15 @@ def resume_run(body: ResumeRunRequest, request: Request, record: RunRecord = Dep
     return record.snapshot()
 
 
+@router.post("/{run_id}/retry", status_code=202)
+def retry_run(request: Request, record: RunRecord = Depends(owned_run)):
+    try:
+        replay = _manager(request).retry(record)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return replay.snapshot()
+
+
 @router.post("/{run_id}/cancel", status_code=202)
 def cancel_run(request: Request, record: RunRecord = Depends(owned_run)):
     return _manager(request).cancel(record).snapshot()

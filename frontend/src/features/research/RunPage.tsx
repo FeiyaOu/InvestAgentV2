@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRun } from "../../api/useRun";
 import { canDeleteRun, DELETE_RUN_MESSAGE, useRecordDeletion } from "../../api/useRecordDeletion";
-import { CATEGORY_LABELS, TERMINAL, emptySnapshot, buildSteps, evidenceCount, runHeadline, type ProgressStep } from "../../api/runView";
+import { CATEGORY_LABELS, TERMINAL, canRetryData, emptySnapshot, buildSteps, evidenceCount, runHeadline, type ProgressStep } from "../../api/runView";
 import type { RunSnapshot, TaskCategory } from "../../api/types";
 import { Icon } from "../../components/Icon";
 import { DeleteButton } from "../../components/DeleteButton";
@@ -217,7 +217,10 @@ export function Answer({ snapshot, elapsed }: { snapshot: RunSnapshot; elapsed: 
 
 export function ResearchTurn({ runId, conversationId, initialSnapshot }: { runId: string; conversationId: string; initialSnapshot?: RunSnapshot }) {
   const navigate = useNavigate();
-  const { snapshot, loading, error, elapsed, resume, cancel } = useRun(runId, initialSnapshot ? { ...emptySnapshot(runId, conversationId, initialSnapshot.query), ...initialSnapshot } : undefined);
+  const { snapshot, loading, error, elapsed, resume, cancel, retry } = useRun(runId, initialSnapshot ? { ...emptySnapshot(runId, conversationId, initialSnapshot.query), ...initialSnapshot } : undefined);
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
   const [stopping, setStopping] = useState(false);
   const [stopError, setStopError] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -285,11 +288,28 @@ export function ResearchTurn({ runId, conversationId, initialSnapshot }: { runId
             onDelete={async () => { setDeleteError(null); await removeRun(snapshot.run_id); }} />
           </div>
         </div>
+        {canRetryData(snapshot) && <div className="zh-retry-row">
+          <button type="button" disabled={retrying} onClick={async () => {
+            setRetrying(true); setRetryError(null);
+            try { await retry(); }
+            catch (err) { setRetryError(err instanceof Error ? err.message : String(err)); }
+            finally { setRetrying(false); }
+          }}>{retrying ? "正在重新执行…" : "重新执行本轮"}</button>
+          <span>将重新执行本轮全部任务</span>
+        </div>}
+        {retryError && <Notice tone="error">重试失败：{retryError}</Notice>}
         {stopError && <Notice tone="error">停止失败：{stopError}</Notice>}
         {deleteError && <Notice tone="error">删除失败：{deleteError}</Notice>}
         {running && <ProgressPanel snapshot={snapshot} elapsed={elapsed} />}
         {waiting && <ClarificationCard snapshot={snapshot} onResume={resume} />}
         {(showAnswer || partialResults) && <Answer snapshot={snapshot} elapsed={elapsed} />}
+        {Boolean(snapshot.state.retry_history?.length) && <details className="zh-answer-details" onToggle={(event) => setShowHistory(event.currentTarget.open)}>
+          <summary>之前的执行记录 · {snapshot.state.retry_history!.length} 次</summary>
+          {showHistory && <div>{snapshot.state.retry_history!.map((previous, index) => <section key={index}>
+            <h3>第 {index + 1} 次执行</h3>
+            <Answer snapshot={previous} elapsed={previous.elapsed_seconds ?? 0} />
+          </section>)}</div>}
+        </details>}
       </div>
     </article>
   );

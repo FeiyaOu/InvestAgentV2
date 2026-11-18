@@ -97,6 +97,10 @@ export function resumeRun(runId: string, answer: string) {
   return request<RunSnapshot>(`/runs/${runId}/resume`, { method: "POST", body: JSON.stringify({ answer }) });
 }
 
+export function retryRun(runId: string) {
+  return request<RunSnapshot>(`/runs/${runId}/retry`, { method: "POST" });
+}
+
 export function cancelRun(runId: string) {
   return request<RunSnapshot>(`/runs/${runId}/cancel`, { method: "POST" });
 }

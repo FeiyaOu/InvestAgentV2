@@ -31,7 +31,14 @@ class ConversationTurn(TypedDict):
 
 def add_turns(left: list[dict] | None, right: list[dict] | None) -> list[dict]:
     """Append-only reducer; a checkpointer makes this the durable thread history."""
-    return list(left or []) + list(right or [])
+    merged = list(left or [])
+    for turn in right or []:
+        index = next((i for i, old in enumerate(merged) if turn.get("completed_at") and old.get("completed_at") == turn["completed_at"]), None)
+        if index is None:
+            merged.append(turn)
+        else:
+            merged[index] = turn
+    return merged
 
 
 KEEP_RECENT_TURNS = 3  # Turns shown verbatim; older ones are folded into history_summary.
@@ -154,12 +161,19 @@ def build_conversation_context(turns: list[dict], facts: dict | None, summary: d
 
 def retain_results(left: list[dict] | None, right: list[dict] | None) -> list[dict]:
     """Bound complete answer/evidence memory independently from compacted text history."""
-    return (list(left or []) + list(right or []))[-KEEP_RECENT_TURNS:]
+    merged = list(left or [])
+    for item in right or []:
+        merged = [old for old in merged if old.get("source_id") != item.get("source_id")] + [item]
+    return merged[-KEEP_RECENT_TURNS:]
 
 
 class ParentState(TypedDict, total=False):
     user_query: str
     conversation_context: str
+    retry_plan: dict | None
+    replaying: bool
+    replay_turn_completed_at: str | None
+    replay_source_id: str | None
     recent_results: Annotated[list[dict], retain_results]
     followup_route: Literal["routing", "planner", "direct_answer"]
     followup_source_ids: list[str]
@@ -189,7 +203,7 @@ def create_parent_state(user_query: str, *, conversation_context: str = "",
     request = ParentRequest.model_validate({"user_query": user_query,
         "conversation_context": conversation_context,
         "report_parameters": {} if report_parameters is None else report_parameters})
-    return {**request.model_dump(), "followup_route": "routing", "followup_source_ids": [], "followup_reason": None, "plan": None, "planning_status": None,
+    return {**request.model_dump(), "retry_plan": None, "replaying": False, "replay_turn_completed_at": None, "replay_source_id": None, "followup_route": "routing", "followup_source_ids": [], "followup_reason": None, "plan": None, "planning_status": None,
             "planning_error": None, "planning_attempts": 0, "task_results": {},
             "supervisor_status": None, "supervisor_error": None,
             "final_response": None, "composition_status": None, "composition_error": None,

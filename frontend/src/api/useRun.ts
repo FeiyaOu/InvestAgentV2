@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { cancelRun, resumeRun as resumeRunRequest } from "./client";
+import { cancelRun, retryRun, resumeRun as resumeRunRequest } from "./client";
 import { watchRun } from "./runStream";
 import { TERMINAL } from "./runView";
 import type { RunSnapshot } from "./types";
@@ -11,6 +11,7 @@ export interface UseRunResult {
   elapsed: number;
   resume: (answer: string) => Promise<void>;
   cancel: () => Promise<void>;
+  retry: () => Promise<void>;
 }
 
 /** Fetch the run snapshot, then follow its SSE stream until it finishes or waits for input. */
@@ -56,6 +57,13 @@ export function useRun(runId: string | undefined, initialSnapshot?: RunSnapshot)
     setGeneration((value) => value + 1);
   }, [runId]);
 
+  const retry = useCallback(async () => {
+    if (!runId) return;
+    const fresh = await retryRun(runId);
+    setSnapshot(fresh);
+    setGeneration((value) => value + 1);
+  }, [runId]);
+
   const elapsed = (() => {
     if (!snapshot) return 0;
     if (snapshot.elapsed_seconds != null && TERMINAL.includes(snapshot.status)) return snapshot.elapsed_seconds;
@@ -64,5 +72,5 @@ export function useRun(runId: string | undefined, initialSnapshot?: RunSnapshot)
     return Math.max(0, Math.round((Date.now() - new Date(snapshot.started_at).getTime()) / 1000));
   })();
 
-  return { snapshot, loading: loading && !snapshot, error, elapsed, resume, cancel };
+  return { snapshot, loading: loading && !snapshot, error, elapsed, resume, cancel, retry };
 }

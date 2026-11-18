@@ -198,3 +198,16 @@ export function runHeadline(snapshot: RunSnapshot): string {
   if (snapshot.status === "queued" || snapshot.status === "running") return "进行中";
   return labels[key ?? ""] ?? (snapshot.status === "failed" ? "未完成" : "已完成");
 }
+
+/** A retry replays the whole saved plan, rather than asking the planner again. */
+export function canRetryData(snapshot: RunSnapshot): boolean {
+  if (!["completed", "failed", "cancelled"].includes(snapshot.status)) return false;
+  const tasks = snapshot.state.plan?.tasks ?? [];
+  if (!tasks.some((task) => task.category === "market_data")) return false;
+  if (snapshot.status === "failed" || snapshot.status === "cancelled") return true;
+  return Object.values(snapshot.state.task_results ?? {}).some((record) => {
+    if (record.category !== "market_data") return false;
+    const missing = (record.result as { missing_information?: string[] } | null)?.missing_information;
+    return ["failed", "partial", "blocked"].includes(record.status) || Boolean(missing?.length);
+  });
+}

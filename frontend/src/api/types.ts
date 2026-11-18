@@ -167,6 +167,8 @@ export interface ReportTaskResult {
 }
 
 export interface ParentState {
+  execution_attempt?: number;
+  retry_history?: RunSnapshot[];
   followup_route?: "routing" | "planner" | "direct_answer";
   followup_source_ids?: string[];
   user_query?: string;

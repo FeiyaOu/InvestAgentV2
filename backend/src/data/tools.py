@@ -21,7 +21,27 @@ from typing import Literal
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
+from src.core.data_retry import retry_data_call
+
 _SINA_FUNCTIONS = {"stock_zh_a_daily", "stock_zh_index_daily"}
+
+
+def _data_call(call, *args, **kwargs):
+    from langgraph.config import get_config
+    try:
+        check = (get_config().get("configurable") or {}).get("check_cancelled")
+    except RuntimeError:
+        check = None
+    return retry_data_call(call, *args, check_cancelled=check, **kwargs)
+
+
+def _provider_function(ak, legacy, current):
+    """Support both sides of AKShare's interface rename without changing data semantics."""
+    try:
+        fetch = getattr(ak, legacy)
+    except AttributeError:
+        fetch = getattr(ak, current)
+    return lambda *args, **kwargs: _data_call(fetch, *args, **kwargs)
 
 
 def _call_sina(function: str, **kwargs):
@@ -58,7 +78,13 @@ def _sina_worker():
         raise ValueError("unsupported isolated provider")
     with contextlib.redirect_stdout(sys.stderr):
         import akshare as ak
-        frame = getattr(ak, function)(**payload["kwargs"])
+        try:
+            fetch = getattr(ak, function)
+        except AttributeError:
+            fetch = getattr(ak, "index_zh_daily_sina") if function == "stock_zh_index_daily" else None
+        if fetch is None:
+            raise AttributeError(function)
+        frame = fetch(**payload["kwargs"])
     sys.stdout.write(frame.to_json(orient="records", date_format="iso"))
 
 
@@ -176,49 +202,229 @@ def _match_boards(df: object, sector: str) -> object:
 # 工具 1：行业板块表现
 # ============================================================
 
-@tool
-def get_sector_performance(sector: str) -> str:
-    """查询指定行业板块的近期市场表现，包括涨跌幅、成交额和主力净流入。
+def _sector_end_date():
+    from datetime import datetime, timedelta
+    from zoneinfo import ZoneInfo
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    return now.date() if now.hour >= 15 else now.date() - timedelta(days=1)
 
-    Args:
-        sector: 行业板块名称，如"新能源"、"光伏"、"半导体"、"消费"、"医药"
-    """
-    if not _should_use_real_data():
-        return (
-            f"{sector} 板块（模拟数据）："
-            f"涨跌幅 +2.31%，成交额 1,243亿元，主力净流入 +32.1亿元，"
-            f"领涨个股：隆基绿能 +4.2%，通威股份 +3.8%"
-        )
 
+def _sector_json_get(url, params):
+    import requests
+    def fetch():
+        response = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://quote.eastmoney.com/"}, timeout=(5, 12))
+        response.raise_for_status()
+        return response.json()
+    return _data_call(fetch)
+
+
+def _sector_code(sector):
+    # Verified against https://quote.eastmoney.com/bk/90.BK1036.html on 2026-11-18.
+    if sector == "半导体":
+        return "BK1036"
+    if re.fullmatch(r"BK[0-9]{4,6}", sector):
+        return sector
+    payload = _sector_json_get("https://push2.eastmoney.com/api/qt/clist/get", {
+        "pn": 1, "pz": 500, "fs": "m:90+t:2+f:!50", "fields": "f12,f14", "fltt": 2}).get("data") or {}
+    rows = payload.get("diff") or []
+    if isinstance(rows, dict):
+        rows = rows.values()
+    matched = [row for row in rows if row.get("f14") == sector]
+    if len(matched) != 1:
+        raise ValueError("未找到唯一的东财行业名称或代码")
+    return matched[0]["f12"]
+
+
+def _sector_https_history(sector, start, end):
+    """Direct HTTPS history; known industries need no full-industry enumeration."""
+    import pandas as pd
+    code = _sector_code(sector)
+    data = _sector_json_get("https://push2his.eastmoney.com/api/qt/stock/kline/get", {
+        "secid": f"90.{code}", "fields1": "f1,f2,f3,f4,f5", "fields2": "f51,f52,f53,f54,f55,f56,f57",
+        "klt": "101", "fqt": "0", "beg": start.strftime("%Y%m%d"), "end": end.strftime("%Y%m%d")}).get("data") or {}
+    rows = data.get("klines") or []
+    frame = pd.DataFrame([row.split(",") for row in rows], columns=["日期", "开盘", "收盘", "最高", "最低", "成交量", "成交额"])
+    for column in frame.columns[1:]:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    return frame, f"https://quote.eastmoney.com/bk/90.{code}.html"
+
+
+def _sector_https_flow(sector):
+    import pandas as pd
+    code = _sector_code(sector)
+    data = _sector_json_get("https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get", {
+        "secid": f"90.{code}", "lmt": "0", "klt": "101", "fields1": "f1,f2,f3,f7",
+        "fields2": "f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65"}).get("data") or {}
+    return pd.DataFrame([{"日期": row.split(",")[0], "主力净流入-净额": row.split(",")[1]}
+                         for row in data.get("klines") or []])
+
+
+def _sector_recent_flow(ak, sector, trading_days, end):
+    """Fetch the latest flow window independently; a price fallback is not a flow failure."""
+    from datetime import datetime, timezone
+    from math import isfinite
+
+    import pandas as pd
+    result = {"retrieved_at": datetime.now(timezone.utc).isoformat(), "status": "unavailable", "provider": None, "classification": "东方财富行业", "sector": sector,
+        "source_url": "https://data.eastmoney.com/bkzj/BK1036.html" if sector == "半导体" else "https://data.eastmoney.com/bkzj/", "requested_trading_days": trading_days,
+        "observations": 0, "start_date": None, "end_date": None, "trading_dates": [],
+        "main_net_inflow_cny": None, "unit": "CNY", "limitations": [], "source_failures": []}
+    frame = None
+    for name, fetch in [
+        ("eastmoney/https", lambda: _sector_https_flow(sector)),
+        ("akshare/eastmoney", lambda: _provider_function(ak, "stock_sector_fund_flow_hist", "stock_fund_flow_sector_hist_em")(symbol=sector)),
+    ]:
+        try:
+            candidate = fetch()
+            if not isinstance(candidate, pd.DataFrame) or candidate.empty:
+                raise ValueError("资金流未返回有效日线")
+            frame = candidate.copy()
+            result["provider"] = name
+            break
+        except Exception as exc:
+            result["source_failures"].append(f"{name}: {type(exc).__name__}")
+    if frame is None:
+        result["limitations"].append("资金流接口独立查询失败；不能推断为零流入")
+        return result
     try:
-        import akshare as ak  # 懒导入，避免未安装时模块加载失败
+        frame["日期"] = pd.to_datetime(frame["日期"]).dt.date
+        if frame["日期"].isna().any() or frame["日期"].duplicated().any():
+            raise ValueError("资金流日期缺失或重复")
+        selected = frame[frame["日期"] <= end].sort_values("日期").tail(trading_days)
+        result["observations"] = len(selected)
+        if not selected.empty:
+            dates = [str(day) for day in selected["日期"]]
+            result.update({"start_date": dates[0], "end_date": dates[-1], "trading_dates": dates})
+        if len(selected) != trading_days:
+            raise ValueError("资金流交易日不足，不以不完整样本冒充完整窗口")
+        values = pd.to_numeric(selected["主力净流入-净额"], errors="coerce")
+        if values.isna().any() or not values.map(isfinite).all() or not isfinite(float(values.sum())):
+            raise ValueError("资金流金额缺失或无效")
+        result.update({"main_net_inflow_cny": float(values.sum()), "status": "available"})
+    except Exception as exc:
+        result["status"] = "partial"
+        result["limitations"].append(str(exc) if isinstance(exc, ValueError) else "资金流数据结构不符合要求")
+    return result
 
-        # 同花顺行业板块实时汇总。真实列名为
-        # ['序号','板块','涨跌幅','总成交量','总成交额','净流入','上涨家数','下跌家数','均价','领涨股',...]
-        df = ak.stock_board_industry_summary_ths()
-        matched = _match_boards(df, sector)
-        if matched.empty:
-            return (
-                f"未找到与 '{sector}' 对应的行业板块。"
-                f"可用板块示例：{'、'.join(df['板块'].head(8).tolist())} 等 {len(df)} 个。"
-            )
 
-        lines = []
-        for _, row in matched.head(4).iterrows():
-            lines.append(
-                f"- {row['板块']}："
-                f"涨跌幅 {row.get('涨跌幅', 'N/A')}%，"
-                f"总成交额 {row.get('总成交额', 'N/A')}亿元，"
-                f"净流入 {row.get('净流入', 'N/A')}亿元，"
-                f"领涨股 {row.get('领涨股', 'N/A')}（{row.get('领涨股-涨跌幅', 'N/A')}%）"
-            )
-        return f"{sector} 相关行业板块表现（同花顺实时）：\n" + "\n".join(lines)
+def _call_sector_ths(sector, start, end):
+    """Keep the THS native JavaScript decoder out of the API process."""
+    import subprocess
+    import sys
+    from io import StringIO
 
-    except Exception as e:
-        return (
-            f"{sector} 板块数据暂时无法获取（{type(e).__name__}），"
-            f"请基于已有市场信息进行分析。"
-        )
+    import pandas as pd
+    code = ("import json,sys,contextlib; params=json.load(sys.stdin); "
+            "\nwith contextlib.redirect_stdout(sys.stderr):\n import importlib; m=importlib.import_module('akshare.stock.board.stock_board_industry_ths')"
+            "\n if params['symbol']=='半导体': m._get_stock_board_industry_name_ths=lambda: {'半导体':'881121'}"
+            "\n frame=m.stock_board_industry_index_ths(**params)"
+            "\nsys.stdout.write(frame.to_json(orient='records',date_format='iso'))")
+    completed = subprocess.run([sys.executable, "-c", code], input=json.dumps({"symbol": sector,
+        "start_date": start.strftime("%Y%m%d"), "end_date": end.strftime("%Y%m%d")}),
+        text=True, capture_output=True, timeout=25)
+    if completed.returncode != 0:
+        raise ValueError("备用行业数据源不可用")
+    return pd.read_json(StringIO(completed.stdout), orient="records").rename(columns={"收盘价": "收盘"})
+
+
+def _sector_price_data(ak, sector, start, end):
+    import pandas as pd
+    failures = []
+    def note(source, exc):
+        detail = str(exc)[:140] if isinstance(exc, (ValueError, KeyError, TypeError)) else type(exc).__name__
+        failures.append(f"{source}: {detail}")
+    def ths():
+        frame = _data_call(_call_sector_ths, sector, start, end)
+        if frame.empty:
+            raise ValueError("同花顺行业历史为空")
+        frame.attrs["amount_unit"] = "CNY"
+        frame.attrs["amount_unit_basis"] = "同花顺日线成交额按元；2026-11-18与同源成交额(亿)交叉核验"
+        frame.attrs["source_failures"] = list(failures)
+        return frame, "akshare/ths", "https://q.10jqka.com.cn/thshy/detail/code/881121/" if sector == "半导体" else "https://q.10jqka.com.cn/thshy/"
+    if sector == "半导体" and "stock_board_industry_index_ths" in vars(ak):
+        try:
+            return ths()
+        except Exception as exc:
+            note("同花顺直查", exc)
+    try:
+        frame, url = _sector_https_history(sector, start, end)
+        if not frame.empty:
+            return frame, "eastmoney/https", url
+        failures.append("东财HTTPS: 无数据")
+    except Exception as exc:
+        note("东财HTTPS", exc)
+    try:
+        frame = _data_call(ak.stock_board_industry_hist_em, symbol=sector, period="日k", adjust="",
+            start_date=start.strftime("%Y%m%d"), end_date=end.strftime("%Y%m%d"))
+        if isinstance(frame, pd.DataFrame) and not frame.empty:
+            return frame, "akshare/eastmoney", "https://quote.eastmoney.com/center/boardlist.html#industry_board"
+        failures.append("东财备用通道: 无数据")
+    except Exception as exc:
+        note("东财备用通道", exc)
+    if sector != "半导体" and "stock_board_industry_index_ths" in vars(ak):
+        try:
+            return ths()
+        except Exception as exc:
+            note("同花顺备用", exc)
+    raise ValueError("板块历史源均不可用；" + "；".join(failures))
+
+
+@tool
+def get_sector_performance(sector: str, trading_days: int = 5) -> str:
+    """查询行业最近N个已完成交易日，近期默认5个交易日；用户明确最近一个交易日才传1。
+
+    输出实际交易日起止日期、区间涨跌幅、累计成交额与累计主力净流入及来源。
+    不是最近N个自然日；缺失数据留空，不以当日快照或其他行业代替。支持1到60个交易日。
+    """
+    from datetime import datetime, timedelta, timezone
+
+    import pandas as pd
+    output = {"status": "unavailable", "sector": sector, "requested_trading_days": trading_days,
+        "observations": 0, "start_date": None, "end_date": None, "period_return": None,
+        "turnover_amount_cny": None, "main_net_inflow_cny": None, "provider": None, "source_url": None,
+        "retrieved_at": datetime.now(timezone.utc).isoformat(), "data_mode": "real", "limitations": [],
+        "units": {"period_return": "fraction", "turnover_amount_cny": "CNY", "main_net_inflow_cny": "CNY"}}
+    validated_request = False
+    try:
+        if isinstance(trading_days, bool) or not 1 <= trading_days <= 60:
+            raise ValueError("交易日数须为1到60的整数")
+        if not _should_use_real_data():
+            output["data_mode"] = "mock"
+            raise ValueError("模拟数据模式未配置板块历史序列，不生成虚构区间统计")
+        import akshare as ak
+        end = _sector_end_date()
+        validated_request = True
+        output["as_of_date"] = end.isoformat()
+        frame, provider, url = _sector_price_data(ak, sector, end - timedelta(days=max(60, trading_days * 4)), end)
+        frame = frame.copy()
+        frame["日期"] = pd.to_datetime(frame["日期"]).dt.date
+        if frame["日期"].duplicated().any():
+            raise ValueError("板块行情日期重复")
+        frame = frame[frame["日期"] <= end].sort_values("日期")
+        if frame.empty:
+            raise ValueError("无已完成交易日数据")
+        selected = frame.tail(trading_days)
+        output["source_failures"] = frame.attrs.get("source_failures", [])
+        output["industry_classification"] = "同花顺行业" if provider == "akshare/ths" else "东方财富行业"
+        if frame.attrs.get("amount_unit_basis"):
+            output["amount_unit_basis"] = frame.attrs["amount_unit_basis"]
+        output.update({"provider": provider, "source_url": url, "start_date": str(selected.iloc[0]["日期"]),
+            "end_date": str(selected.iloc[-1]["日期"]), "observations": len(selected)})
+        if len(selected) < trading_days:
+            output["status"] = "partial"
+            output["limitations"].append(f"仅有{len(selected)}个交易日，不足要求的{trading_days}个，不输出冒充完整区间的统计")
+        else:
+            _sector_metrics(output, frame, selected, ak, provider != "akshare/ths")
+    except Exception as exc:
+        output["limitations"].append(str(exc) if isinstance(exc, ValueError) else "板块历史数据源暂不可用")
+    if validated_request and "fund_flow" not in output and "independent_fund_flow" not in output:
+        flow = _sector_recent_flow(ak, sector, trading_days, end)
+        output["independent_fund_flow"] = flow
+        if flow["status"] == "available":
+            output["status"] = "partial"
+        output["limitations"].append("资金流为独立查询结果，须使用其自身的来源、行业口径和起止日期，不与缺失行情合并")
+    output["retrieved_at"] = datetime.now(timezone.utc).isoformat()
+    return json.dumps(output, ensure_ascii=False, allow_nan=False)
 
 
 # ============================================================
@@ -231,9 +437,40 @@ def get_sector_performance(sector: str) -> str:
 
 _INDEXES = [
     ("上证指数", "000001", "sh000001"),
+    ("深证成指", "399001", "sz399001"),
     ("创业板指", "399006", "sz399006"),
     ("沪深300", "000300", "sh000300"),
 ]
+
+
+def _index_aliases():
+    aliases = {name: (code, name) for name, code, _ in _INDEXES}
+    aliases.update({"沪深300指数": ("000300", "沪深300"), "上证综指": ("000001", "上证指数"),
+                    "深证成指指数": ("399001", "深证成指")})
+    return aliases
+
+
+def _fetch_index_em(ak, code, start, end):
+    """Known market identifiers avoid the expensive all-index code-map crawl."""
+    import pandas as pd
+    market_symbol = next((symbol for _, ident, symbol in _INDEXES if ident == code), None)
+    if market_symbol:
+        try:
+            fetch = _provider_function(ak, "stock_zh_index_daily_em", "index_zh_daily_em")
+        except AttributeError:
+            fetch = None
+        if fetch is not None:
+            frame = fetch(symbol=market_symbol, start_date=start, end_date=end)
+            if frame is None or isinstance(frame, pd.DataFrame):
+                if frame is None or frame.empty:
+                    return frame
+                frame = frame.rename(columns={"date": "日期", "open": "开盘", "close": "收盘",
+                    "high": "最高", "low": "最低", "volume": "成交量", "amount": "成交额"})
+                if "涨跌幅" not in frame.columns:
+                    frame["涨跌幅"] = frame["收盘"].pct_change(fill_method=None) * 100
+                return frame
+    return _provider_function(ak, "index_zh_a_hist", "index_zh_hist_em")(
+        symbol=code, period="daily", start_date=start, end_date=end)
 
 
 def _index_quote(ak: object, name: str, em_symbol: str, sina_symbol: str) -> str:
@@ -245,12 +482,11 @@ def _index_quote(ak: object, name: str, em_symbol: str, sina_symbol: str) -> str
 
     # 源1：东财（自带涨跌幅字段）
     try:
-        df = ak.index_zh_a_hist(
-            symbol=em_symbol, period="daily", start_date=start, end_date=end
-        )
+        df = _fetch_index_em(ak, em_symbol, start, end)
         if df is not None and len(df) > 0:
             latest = df.iloc[-1]
-            return f"{name} {latest['收盘']}（{latest['涨跌幅']}%）"
+            return (f"{name} 收盘 {latest['收盘']}（{latest['涨跌幅']}%），日期 {latest.get('日期', '未提供')}，"
+                    f"成交量 {latest.get('成交量', '不可用')}（东财源原始单位，未跨源换算）")
     except Exception:
         pass  # fall through 到新浪源
 
@@ -261,7 +497,8 @@ def _index_quote(ak: object, name: str, em_symbol: str, sina_symbol: str) -> str
             last = float(df.iloc[-1]["close"])
             prev = float(df.iloc[-2]["close"])
             pct = round((last - prev) / prev * 100, 2) if prev else 0.0
-            return f"{name} {last:.2f}（{'+' if pct >= 0 else ''}{pct}%）"
+            return (f"{name} 收盘 {last:.2f}（{'+' if pct >= 0 else ''}{pct}%），日期 {df.iloc[-1].get('date', '未提供')}，"
+                    f"成交量 {df.iloc[-1].get('volume', '不可用')}（新浪源原始单位，未跨源换算）")
     except Exception:
         pass
 
@@ -274,7 +511,7 @@ def _index_quote(ak: object, name: str, em_symbol: str, sina_symbol: str) -> str
 
 @tool
 def get_index_performance() -> str:
-    """查询A股主要指数（上证指数、创业板指、沪深300）的最新行情和近期走势。"""
+    """查询A股主要指数（上证指数、深证成指、创业板指、沪深300）的最近日线收盘、涨跌幅、成交量和行情日期；不是盘中实时数据。"""
     if not _should_use_real_data():
         return (
             "主要指数行情（模拟数据）："
@@ -331,7 +568,7 @@ def get_macro_indicators() -> str:
         # 源1：macro_china_pmi()，列为 ['月份','制造业-指数','制造业-同比增长','非制造业-指数','非制造业-同比增长']
         # 按时间倒序，iloc[0] 才是最新月份（旧实现用 iloc[-1] 会取到 2008 年的数据）
         try:
-            df = ak.macro_china_pmi()
+            df = _data_call(ak.macro_china_pmi, )
             if df is not None and len(df) > 0:
                 latest = df.iloc[0]
                 period = latest["月份"]
@@ -347,7 +584,7 @@ def get_macro_indicators() -> str:
 
         # 源2：macro_china_pmi_yearly()，列为 ['商品','日期','今值','预测值','前值']
         # 注意：这里没有"制造业"列，旧实现读 latest.get("制造业") 恒为 N/A
-        df = ak.macro_china_pmi_yearly()
+        df = _data_call(ak.macro_china_pmi_yearly, )
         if df is None or len(df) == 0:
             return "宏观PMI数据暂时不可用，请基于已有信息进行分析。"
         latest = df.iloc[-1]
@@ -395,7 +632,7 @@ def search_stock_news(keyword: str) -> str:
         # 源1：东财个股新闻。参数名是 symbol —— 旧实现传 stock=，
         # 在 akshare>=1.12 上直接 TypeError，于是真实模式下新闻永远走 fallback。
         try:
-            df = ak.stock_news_em(symbol=keyword)
+            df = _data_call(ak.stock_news_em, symbol=keyword)
             titles = [str(t) for t in df["新闻标题"].head(5)] if df is not None and len(df) else []
             if titles:
                 return f"'{keyword}' 近期相关新闻（东方财富）：\n" + _numbered(titles)
@@ -413,7 +650,7 @@ def search_stock_news(keyword: str) -> str:
             if fn is None:
                 continue
             try:
-                df = fn(**kwargs)
+                df = _data_call(fn, **kwargs)
                 if df is None or len(df) == 0:
                     continue
                 display = df[display_col].astype(str)
@@ -642,7 +879,7 @@ def get_stock_performance(query: str) -> str:
         df, cols = None, None
         # 源1：东财（中文列名）
         try:
-            df = ak.stock_zh_a_hist(
+            df = _data_call(ak.stock_zh_a_hist,
                 symbol=code, period="daily",
                 start_date=start, end_date=end, adjust="qfq"
             )
@@ -698,6 +935,111 @@ INVEST_TOOLS = [
 ]
 
 
+
+def _sector_metrics(output, frame, selected, ak, allow_flow=True):
+    from math import isfinite
+
+    import pandas as pd
+
+    before = frame[frame["日期"] < selected.iloc[0]["日期"]]
+    if not before.empty:
+        base, last = float(before.iloc[-1]["收盘"]), float(selected.iloc[-1]["收盘"])
+        if base > 0 and last > 0 and isfinite(base) and isfinite(last):
+            output["period_return"] = round(last / base - 1, 12)
+            output["return_base_date"] = str(before.iloc[-1]["日期"])
+    if output["period_return"] is None:
+        output["limitations"].append("缺少有效区间起点前收盘，无法计算完整区间涨跌幅")
+    amount = pd.to_numeric(selected.get("成交额", pd.Series(dtype=float)), errors="coerce")
+    if len(amount) == len(selected) and amount.notna().all() and amount.map(isfinite).all() and (amount >= 0).all():
+        total = float(amount.sum())
+        if isfinite(total):
+            output["turnover_amount_cny"] = total
+        else:
+            output["limitations"].append("成交额合计超出有效数值范围")
+    else:
+        output["limitations"].append("成交额不完整，不将部分金额当作区间总额")
+    if output.get("requested_trading_days"):
+        from datetime import date
+        end = date.fromisoformat(output["as_of_date"]) if output.get("as_of_date") else _sector_end_date()
+        flow = _sector_recent_flow(ak, output["sector"], output["requested_trading_days"], end)
+        price_dates = [str(day) for day in selected["日期"]]
+        if allow_flow and flow["status"] == "available" and flow["trading_dates"] == price_dates:
+            output["main_net_inflow_cny"] = flow["main_net_inflow_cny"]
+            output["fund_flow"] = flow
+        else:
+            output["independent_fund_flow"] = flow
+            if not allow_flow:
+                output["limitations"].append("行情采用同花顺行业口径，资金流采用东方财富行业口径；分别展示，不作同口径合并或相互归因")
+            elif flow["status"] == "available":
+                output["limitations"].append("行情与资金流窗口日期不同；分别展示，不将两者视为同一统计区间")
+            output["limitations"].extend(flow["limitations"])
+        output["limitations"].append("主力净流入不是资金总流入或未来涨跌预测")
+    else:
+        try:
+            if output.get("provider") == "eastmoney/https":
+                try:
+                    flow = _sector_https_flow(output["sector"])
+                except Exception:
+                    flow = _provider_function(ak, "stock_sector_fund_flow_hist", "stock_fund_flow_sector_hist_em")(symbol=output["sector"])
+            else:
+                flow = _provider_function(ak, "stock_sector_fund_flow_hist", "stock_fund_flow_sector_hist_em")(symbol=output["sector"])
+            flow = flow.copy()
+            flow["日期"] = pd.to_datetime(flow["日期"]).dt.date
+            flow = flow[(flow["日期"] >= selected.iloc[0]["日期"]) & (flow["日期"] <= selected.iloc[-1]["日期"])]
+            values = pd.to_numeric(flow["主力净流入-净额"], errors="coerce")
+            if flow["日期"].duplicated().any() or set(flow["日期"]) != set(selected["日期"]) or values.isna().any() or not values.map(isfinite).all():
+                raise ValueError("资金流日期或数值未覆盖全部行情交易日")
+            output["main_net_inflow_cny"] = float(values.sum())
+        except Exception:
+            output["limitations"].append("历史主力净流入不可用或未覆盖区间全部交易日；不替换成近期/当日资金流，也不将缺失当0")
+        output["limitations"].append("主力净流入为数据源资金分类统计，不等于资金总流入；区间统计基于实际返回的交易日")
+    output["status"] = "available" if all(output[k] is not None for k in ("period_return", "turnover_amount_cny", "main_net_inflow_cny")) else "partial"
+
+@tool
+def get_sector_history(sector: str, start_date: str, end_date: str) -> str:
+    """Query an exact Eastmoney industry name over YYYY-MM-DD dates.
+
+    Returns interval price return, total turnover (CNY), and main net inflow (CNY).
+    Net inflow is not gross inflow. Limited flow history may not cover the requested
+    dates: incomplete metrics are null, never replaced with today's snapshot.
+    """
+    from datetime import date, datetime, timedelta
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+
+    output = {"status": "unavailable", "sector": sector, "start_date": start_date, "end_date": end_date,
+              "provider": "akshare/eastmoney", "source_url": "https://quote.eastmoney.com/center/boardlist.html#industry_board",
+              "period_return": None, "turnover_amount_cny": None, "main_net_inflow_cny": None,
+              "units": {"period_return": "fraction", "turnover_amount_cny": "CNY", "main_net_inflow_cny": "CNY"},
+              "limitations": []}
+    try:
+        start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+        if start > end or (end - start).days > 3660 or end > datetime.now(ZoneInfo("Asia/Shanghai")).date():
+            raise ValueError("日期须为历史区间，单次最长3660天")
+        if not _should_use_real_data():
+            raise ValueError("模拟模式未提供板块历史数据，不生成虚构区间统计")
+        import akshare as ak
+        frame = _data_call(ak.stock_board_industry_hist_em, symbol=sector, period="日k", adjust="",
+            start_date=(start - timedelta(days=60)).strftime("%Y%m%d"), end_date=end.strftime("%Y%m%d"))
+        if frame is None or frame.empty:
+            raise ValueError("无板块历史行情；须使用精确行业名称，不自动替换为概念板块")
+        frame = frame.copy()
+        frame["日期"] = pd.to_datetime(frame["日期"]).dt.date
+        if frame["日期"].duplicated().any():
+            raise ValueError("板块行情日期重复")
+        frame = frame.sort_values("日期")
+        selected = frame[(frame["日期"] >= start) & (frame["日期"] <= end)]
+        if selected.empty:
+            raise ValueError("区间内无板块交易数据")
+        output.update({"observed_start": str(selected.iloc[0]["日期"]), "observed_end": str(selected.iloc[-1]["日期"]),
+                       "observations": len(selected)})
+        _sector_metrics(output, frame, selected, ak)
+    except Exception as exc:
+        output["limitations"].append(str(exc) if isinstance(exc, ValueError) else "板块历史数据源暂不可用")
+    return json.dumps(output, ensure_ascii=False, allow_nan=False)
+
+
 # Structured acquisition is separate from INVEST_TOOLS to preserve report inputs.
 @tool
 def get_price_history(query: str, start_date: str, end_date: str, config: RunnableConfig,
@@ -707,7 +1049,7 @@ def get_price_history(query: str, start_date: str, end_date: str, config: Runnab
 
     Use for historical/quantitative requests, not just the latest price.
     Dates must be YYYY-MM-DD. Stock query accepts a name or six-digit code;
-    index query requires a six-digit index code and adjustment='none'.
+    index query accepts a known index name or six-digit code and adjustment='none'.
     Returns metadata/reference and endpoint observations, never the full table.
     DatasetStore is injected by application config, not supplied by the model.
     """
@@ -730,12 +1072,20 @@ def get_price_history(query: str, start_date: str, end_date: str, config: Runnab
         if start > end or (end - start).days > 3660 or end > datetime.now(ZoneInfo("Asia/Shanghai")).date():
             return unavailable("invalid_range", "日期须为有效历史区间，单次最长3660天。")
         security_name = None
+        named = re.fullmatch(r"(.+?)[（(]([0-9]{6})[）)]", query.strip())
+        index_identity = _index_aliases().get(named[1].strip() if named else query.strip())
+        if index_identity and named and named[2] != index_identity[0]:
+            return unavailable("symbol_mismatch", f"指数名称与代码不一致，{index_identity[1]}正确代码为{index_identity[0]}。")
+        if asset_type == "stock" and index_identity:
+            asset_type, adjustment = "index", "none"
         if asset_type == "stock":
             code, security_name, problem = resolve_security(query)
             if problem and problem.startswith("名称与代码不一致"):
                 return unavailable("symbol_mismatch", problem)
         else:
-            code = query.strip()
+            code, security_name = index_identity or (query.strip(), None)
+            if security_name is None:
+                security_name = next((name for name, ident, _ in _INDEXES if ident == code), None)
         if not code or len(code) != 6 or not code.isdigit():
             return unavailable("invalid_symbol", "仅支持六位 A 股或指数代码，请明确查询对象。")
         if asset_type == "index" and adjustment != "none":
@@ -748,7 +1098,7 @@ def get_price_history(query: str, start_date: str, end_date: str, config: Runnab
             provider = "akshare/eastmoney"
             if asset_type == "stock":
                 try:
-                    df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start.strftime("%Y%m%d"),
+                    df = _data_call(ak.stock_zh_a_hist, symbol=code, period="daily", start_date=start.strftime("%Y%m%d"),
                         end_date=end.strftime("%Y%m%d"), adjust="" if adjustment == "none" else adjustment)
                 except Exception:
                     df = None
@@ -762,8 +1112,7 @@ def get_price_history(query: str, start_date: str, end_date: str, config: Runnab
                             "high": "最高", "low": "最低", "volume": "成交量", "turnover": "换手率"})
             else:
                 try:
-                    df = ak.index_zh_a_hist(symbol=code, period="daily", start_date=start.strftime("%Y%m%d"),
-                                           end_date=end.strftime("%Y%m%d"))
+                    df = _fetch_index_em(ak, code, start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
                 except Exception:
                     df = None
                 if df is None or df.empty:
@@ -891,7 +1240,7 @@ def get_valuation_snapshot(query: str, config: RunnableConfig, as_of_date: str |
         real = _should_use_real_data()
         if real:
             import akshare as ak
-            frame = ak.stock_value_em(symbol=code)
+            frame = _data_call(ak.stock_value_em, symbol=code)
             if frame is None or frame.empty:
                 return unavailable("no_data", "无可用估值数据。")
             frame = frame.copy()

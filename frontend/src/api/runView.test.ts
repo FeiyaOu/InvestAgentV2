@@ -109,3 +109,16 @@ it("shows direct follow-up progress without a planner step", () => {
   s = applyEvent(s, ev("node_update", { node: "followup_answer", state: { final_response: "解释完成" } }));
   expect(buildSteps(s).every((step) => step.state === "done")).toBe(true);
 });
+
+it("offers whole-plan retry only for ended research with missing data", async () => {
+  const { canRetryData } = await import("./runView");
+  const s = emptySnapshot("r", "c", "查询行情");
+  s.state = { plan: PLAN, task_results: {
+    m: { ...PLAN.tasks[0], status: "partial", error: null, result: { missing_information: ["数据源超时"] } },
+  } };
+  expect(canRetryData(s)).toBe(false);
+  s.status = "completed";
+  expect(canRetryData(s)).toBe(true);
+  s.state = { final_response: "解释性回答" };
+  expect(canRetryData(s)).toBe(false);
+});

@@ -21,7 +21,27 @@ from typing import Literal
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
+from src.core.data_retry import retry_data_call
+
 _SINA_FUNCTIONS = {"stock_zh_a_daily", "stock_zh_index_daily"}
+
+
+def _data_call(call, *args, **kwargs):
+    from langgraph.config import get_config
+    try:
+        check = (get_config().get("configurable") or {}).get("check_cancelled")
+    except RuntimeError:
+        check = None
+    return retry_data_call(call, *args, check_cancelled=check, **kwargs)
+
+
+def _provider_function(ak, legacy, current):
+    """Support both sides of AKShare's interface rename without changing data semantics."""
+    try:
+        fetch = getattr(ak, legacy)
+    except AttributeError:
+        fetch = getattr(ak, current)
+    return lambda *args, **kwargs: _data_call(fetch, *args, **kwargs)
 
 
 def _call_sina(function: str, **kwargs):
@@ -58,7 +78,13 @@ def _sina_worker():
         raise ValueError("unsupported isolated provider")
     with contextlib.redirect_stdout(sys.stderr):
         import akshare as ak
-        frame = getattr(ak, function)(**payload["kwargs"])
+        try:
+            fetch = getattr(ak, function)
+        except AttributeError:
+            fetch = getattr(ak, "index_zh_daily_sina") if function == "stock_zh_index_daily" else None
+        if fetch is None:
+            raise AttributeError(function)
+        frame = fetch(**payload["kwargs"])
     sys.stdout.write(frame.to_json(orient="records", date_format="iso"))
 
 
@@ -195,7 +221,7 @@ def get_sector_performance(sector: str) -> str:
 
         # 同花顺行业板块实时汇总。真实列名为
         # ['序号','板块','涨跌幅','总成交量','总成交额','净流入','上涨家数','下跌家数','均价','领涨股',...]
-        df = ak.stock_board_industry_summary_ths()
+        df = _data_call(ak.stock_board_industry_summary_ths, )
         matched = _match_boards(df, sector)
         if matched.empty:
             return (
@@ -231,9 +257,40 @@ def get_sector_performance(sector: str) -> str:
 
 _INDEXES = [
     ("上证指数", "000001", "sh000001"),
+    ("深证成指", "399001", "sz399001"),
     ("创业板指", "399006", "sz399006"),
     ("沪深300", "000300", "sh000300"),
 ]
+
+
+def _index_aliases():
+    aliases = {name: (code, name) for name, code, _ in _INDEXES}
+    aliases.update({"沪深300指数": ("000300", "沪深300"), "上证综指": ("000001", "上证指数"),
+                    "深证成指指数": ("399001", "深证成指")})
+    return aliases
+
+
+def _fetch_index_em(ak, code, start, end):
+    """Known market identifiers avoid the expensive all-index code-map crawl."""
+    import pandas as pd
+    market_symbol = next((symbol for _, ident, symbol in _INDEXES if ident == code), None)
+    if market_symbol:
+        try:
+            fetch = _provider_function(ak, "stock_zh_index_daily_em", "index_zh_daily_em")
+        except AttributeError:
+            fetch = None
+        if fetch is not None:
+            frame = fetch(symbol=market_symbol, start_date=start, end_date=end)
+            if frame is None or isinstance(frame, pd.DataFrame):
+                if frame is None or frame.empty:
+                    return frame
+                frame = frame.rename(columns={"date": "日期", "open": "开盘", "close": "收盘",
+                    "high": "最高", "low": "最低", "volume": "成交量", "amount": "成交额"})
+                if "涨跌幅" not in frame.columns:
+                    frame["涨跌幅"] = frame["收盘"].pct_change(fill_method=None) * 100
+                return frame
+    return _provider_function(ak, "index_zh_a_hist", "index_zh_hist_em")(
+        symbol=code, period="daily", start_date=start, end_date=end)
 
 
 def _index_quote(ak: object, name: str, em_symbol: str, sina_symbol: str) -> str:
@@ -245,12 +302,11 @@ def _index_quote(ak: object, name: str, em_symbol: str, sina_symbol: str) -> str
 
     # 源1：东财（自带涨跌幅字段）
     try:
-        df = ak.index_zh_a_hist(
-            symbol=em_symbol, period="daily", start_date=start, end_date=end
-        )
+        df = _fetch_index_em(ak, em_symbol, start, end)
         if df is not None and len(df) > 0:
             latest = df.iloc[-1]
-            return f"{name} {latest['收盘']}（{latest['涨跌幅']}%）"
+            return (f"{name} 收盘 {latest['收盘']}（{latest['涨跌幅']}%），日期 {latest.get('日期', '未提供')}，"
+                    f"成交量 {latest.get('成交量', '不可用')}（东财源原始单位，未跨源换算）")
     except Exception:
         pass  # fall through 到新浪源
 
@@ -261,7 +317,8 @@ def _index_quote(ak: object, name: str, em_symbol: str, sina_symbol: str) -> str
             last = float(df.iloc[-1]["close"])
             prev = float(df.iloc[-2]["close"])
             pct = round((last - prev) / prev * 100, 2) if prev else 0.0
-            return f"{name} {last:.2f}（{'+' if pct >= 0 else ''}{pct}%）"
+            return (f"{name} 收盘 {last:.2f}（{'+' if pct >= 0 else ''}{pct}%），日期 {df.iloc[-1].get('date', '未提供')}，"
+                    f"成交量 {df.iloc[-1].get('volume', '不可用')}（新浪源原始单位，未跨源换算）")
     except Exception:
         pass
 
@@ -274,7 +331,7 @@ def _index_quote(ak: object, name: str, em_symbol: str, sina_symbol: str) -> str
 
 @tool
 def get_index_performance() -> str:
-    """查询A股主要指数（上证指数、创业板指、沪深300）的最新行情和近期走势。"""
+    """查询A股主要指数（上证指数、深证成指、创业板指、沪深300）的最近日线收盘、涨跌幅、成交量和行情日期；不是盘中实时数据。"""
     if not _should_use_real_data():
         return (
             "主要指数行情（模拟数据）："
@@ -331,7 +388,7 @@ def get_macro_indicators() -> str:
         # 源1：macro_china_pmi()，列为 ['月份','制造业-指数','制造业-同比增长','非制造业-指数','非制造业-同比增长']
         # 按时间倒序，iloc[0] 才是最新月份（旧实现用 iloc[-1] 会取到 2008 年的数据）
         try:
-            df = ak.macro_china_pmi()
+            df = _data_call(ak.macro_china_pmi, )
             if df is not None and len(df) > 0:
                 latest = df.iloc[0]
                 period = latest["月份"]
@@ -347,7 +404,7 @@ def get_macro_indicators() -> str:
 
         # 源2：macro_china_pmi_yearly()，列为 ['商品','日期','今值','预测值','前值']
         # 注意：这里没有"制造业"列，旧实现读 latest.get("制造业") 恒为 N/A
-        df = ak.macro_china_pmi_yearly()
+        df = _data_call(ak.macro_china_pmi_yearly, )
         if df is None or len(df) == 0:
             return "宏观PMI数据暂时不可用，请基于已有信息进行分析。"
         latest = df.iloc[-1]
@@ -395,7 +452,7 @@ def search_stock_news(keyword: str) -> str:
         # 源1：东财个股新闻。参数名是 symbol —— 旧实现传 stock=，
         # 在 akshare>=1.12 上直接 TypeError，于是真实模式下新闻永远走 fallback。
         try:
-            df = ak.stock_news_em(symbol=keyword)
+            df = _data_call(ak.stock_news_em, symbol=keyword)
             titles = [str(t) for t in df["新闻标题"].head(5)] if df is not None and len(df) else []
             if titles:
                 return f"'{keyword}' 近期相关新闻（东方财富）：\n" + _numbered(titles)
@@ -413,7 +470,7 @@ def search_stock_news(keyword: str) -> str:
             if fn is None:
                 continue
             try:
-                df = fn(**kwargs)
+                df = _data_call(fn, **kwargs)
                 if df is None or len(df) == 0:
                     continue
                 display = df[display_col].astype(str)
@@ -642,7 +699,7 @@ def get_stock_performance(query: str) -> str:
         df, cols = None, None
         # 源1：东财（中文列名）
         try:
-            df = ak.stock_zh_a_hist(
+            df = _data_call(ak.stock_zh_a_hist,
                 symbol=code, period="daily",
                 start_date=start, end_date=end, adjust="qfq"
             )
@@ -698,6 +755,77 @@ INVEST_TOOLS = [
 ]
 
 
+@tool
+def get_sector_history(sector: str, start_date: str, end_date: str) -> str:
+    """Query an exact Eastmoney industry name over YYYY-MM-DD dates.
+
+    Returns interval price return, total turnover (CNY), and main net inflow (CNY).
+    Net inflow is not gross inflow. Limited flow history may not cover the requested
+    dates: incomplete metrics are null, never replaced with today's snapshot.
+    """
+    from datetime import date, datetime, timedelta
+    from math import isfinite
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+
+    output = {"status": "unavailable", "sector": sector, "start_date": start_date, "end_date": end_date,
+              "provider": "akshare/eastmoney", "source_url": "https://quote.eastmoney.com/center/boardlist.html#industry_board",
+              "period_return": None, "turnover_amount_cny": None, "main_net_inflow_cny": None,
+              "units": {"period_return": "fraction", "turnover_amount_cny": "CNY", "main_net_inflow_cny": "CNY"},
+              "limitations": []}
+    try:
+        start, end = date.fromisoformat(start_date), date.fromisoformat(end_date)
+        if start > end or (end - start).days > 3660 or end > datetime.now(ZoneInfo("Asia/Shanghai")).date():
+            raise ValueError("日期须为历史区间，单次最长3660天")
+        if not _should_use_real_data():
+            raise ValueError("模拟模式未提供板块历史数据，不生成虚构区间统计")
+        import akshare as ak
+        frame = _data_call(ak.stock_board_industry_hist_em, symbol=sector, period="日k", adjust="",
+            start_date=(start - timedelta(days=60)).strftime("%Y%m%d"), end_date=end.strftime("%Y%m%d"))
+        if frame is None or frame.empty:
+            raise ValueError("无板块历史行情；须使用精确行业名称，不自动替换为概念板块")
+        frame = frame.copy()
+        frame["日期"] = pd.to_datetime(frame["日期"]).dt.date
+        if frame["日期"].duplicated().any():
+            raise ValueError("板块行情日期重复")
+        frame = frame.sort_values("日期")
+        selected = frame[(frame["日期"] >= start) & (frame["日期"] <= end)]
+        if selected.empty:
+            raise ValueError("区间内无板块交易数据")
+        output.update({"observed_start": str(selected.iloc[0]["日期"]), "observed_end": str(selected.iloc[-1]["日期"]),
+                       "observations": len(selected)})
+        before = frame[frame["日期"] < start]
+        if not before.empty:
+            base, last = float(before.iloc[-1]["收盘"]), float(selected.iloc[-1]["收盘"])
+            if base > 0 and last > 0 and isfinite(base) and isfinite(last):
+                output["period_return"] = round(last / base - 1, 12)
+                output["return_base_date"] = str(before.iloc[-1]["日期"])
+        if output["period_return"] is None:
+            output["limitations"].append("缺少有效区间起点前收盘，无法计算完整区间涨跌幅")
+        amount = pd.to_numeric(selected.get("成交额", pd.Series(dtype=float)), errors="coerce")
+        if len(amount) == len(selected) and amount.notna().all() and amount.map(isfinite).all() and (amount >= 0).all():
+            output["turnover_amount_cny"] = float(amount.sum())
+        else:
+            output["limitations"].append("成交额不完整，不将部分金额当作区间总额")
+        try:
+            flow = _provider_function(ak, "stock_sector_fund_flow_hist", "stock_fund_flow_sector_hist_em")(symbol=sector)
+            flow = flow.copy()
+            flow["日期"] = pd.to_datetime(flow["日期"]).dt.date
+            flow = flow[(flow["日期"] >= start) & (flow["日期"] <= end)]
+            values = pd.to_numeric(flow["主力净流入-净额"], errors="coerce")
+            if flow["日期"].duplicated().any() or set(flow["日期"]) != set(selected["日期"]) or values.isna().any() or not values.map(isfinite).all():
+                raise ValueError("资金流日期或数值未覆盖全部行情交易日")
+            output["main_net_inflow_cny"] = float(values.sum())
+        except Exception:
+            output["limitations"].append("历史主力净流入不可用或未覆盖区间全部交易日；不替换成近期/当日资金流，也不将缺失当0")
+        output["limitations"].append("主力净流入为数据源资金分类统计，不等于资金总流入；区间统计基于实际返回的交易日")
+        output["status"] = "available" if all(output[k] is not None for k in ("period_return", "turnover_amount_cny", "main_net_inflow_cny")) else "partial"
+    except Exception as exc:
+        output["limitations"].append(str(exc) if isinstance(exc, ValueError) else "板块历史数据源暂不可用")
+    return json.dumps(output, ensure_ascii=False, allow_nan=False)
+
+
 # Structured acquisition is separate from INVEST_TOOLS to preserve report inputs.
 @tool
 def get_price_history(query: str, start_date: str, end_date: str, config: RunnableConfig,
@@ -707,7 +835,7 @@ def get_price_history(query: str, start_date: str, end_date: str, config: Runnab
 
     Use for historical/quantitative requests, not just the latest price.
     Dates must be YYYY-MM-DD. Stock query accepts a name or six-digit code;
-    index query requires a six-digit index code and adjustment='none'.
+    index query accepts a known index name or six-digit code and adjustment='none'.
     Returns metadata/reference and endpoint observations, never the full table.
     DatasetStore is injected by application config, not supplied by the model.
     """
@@ -730,12 +858,20 @@ def get_price_history(query: str, start_date: str, end_date: str, config: Runnab
         if start > end or (end - start).days > 3660 or end > datetime.now(ZoneInfo("Asia/Shanghai")).date():
             return unavailable("invalid_range", "日期须为有效历史区间，单次最长3660天。")
         security_name = None
+        named = re.fullmatch(r"(.+?)[（(]([0-9]{6})[）)]", query.strip())
+        index_identity = _index_aliases().get(named[1].strip() if named else query.strip())
+        if index_identity and named and named[2] != index_identity[0]:
+            return unavailable("symbol_mismatch", f"指数名称与代码不一致，{index_identity[1]}正确代码为{index_identity[0]}。")
+        if asset_type == "stock" and index_identity:
+            asset_type, adjustment = "index", "none"
         if asset_type == "stock":
             code, security_name, problem = resolve_security(query)
             if problem and problem.startswith("名称与代码不一致"):
                 return unavailable("symbol_mismatch", problem)
         else:
-            code = query.strip()
+            code, security_name = index_identity or (query.strip(), None)
+            if security_name is None:
+                security_name = next((name for name, ident, _ in _INDEXES if ident == code), None)
         if not code or len(code) != 6 or not code.isdigit():
             return unavailable("invalid_symbol", "仅支持六位 A 股或指数代码，请明确查询对象。")
         if asset_type == "index" and adjustment != "none":
@@ -748,7 +884,7 @@ def get_price_history(query: str, start_date: str, end_date: str, config: Runnab
             provider = "akshare/eastmoney"
             if asset_type == "stock":
                 try:
-                    df = ak.stock_zh_a_hist(symbol=code, period="daily", start_date=start.strftime("%Y%m%d"),
+                    df = _data_call(ak.stock_zh_a_hist, symbol=code, period="daily", start_date=start.strftime("%Y%m%d"),
                         end_date=end.strftime("%Y%m%d"), adjust="" if adjustment == "none" else adjustment)
                 except Exception:
                     df = None
@@ -762,8 +898,7 @@ def get_price_history(query: str, start_date: str, end_date: str, config: Runnab
                             "high": "最高", "low": "最低", "volume": "成交量", "turnover": "换手率"})
             else:
                 try:
-                    df = ak.index_zh_a_hist(symbol=code, period="daily", start_date=start.strftime("%Y%m%d"),
-                                           end_date=end.strftime("%Y%m%d"))
+                    df = _fetch_index_em(ak, code, start.strftime("%Y%m%d"), end.strftime("%Y%m%d"))
                 except Exception:
                     df = None
                 if df is None or df.empty:
@@ -891,7 +1026,7 @@ def get_valuation_snapshot(query: str, config: RunnableConfig, as_of_date: str |
         real = _should_use_real_data()
         if real:
             import akshare as ak
-            frame = ak.stock_value_em(symbol=code)
+            frame = _data_call(ak.stock_value_em, symbol=code)
             if frame is None or frame.empty:
                 return unavailable("no_data", "无可用估值数据。")
             frame = frame.copy()
